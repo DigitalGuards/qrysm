@@ -1,0 +1,19 @@
+load("@qrysm//tools/go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "executionrequests",
+    srcs = ["exits.go"],
+    importpath = "github.com/theQRL/qrysm/consensus-types/executionrequests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config/fieldparams",
+        "//consensus-types/primitives",
+        "@com_github_prysmaticlabs_fastssz//:fastssz",
+    ],
+)
+
+go_test(
+    name = "executionrequests_test",
+    srcs = ["exits_test.go"],
+    embed = [":executionrequests"],
+)
