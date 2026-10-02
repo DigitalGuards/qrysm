@@ -43,6 +43,7 @@ go_test(
     size = "small",
     srcs = [
         "checktags_test.go",
+        "beacon_root_test.go",
         "config_test.go",
         "configset_test.go",
         "loader_test.go",

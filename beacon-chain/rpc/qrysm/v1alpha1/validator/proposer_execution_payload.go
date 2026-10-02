@@ -126,6 +126,12 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 	default:
 		return nil, false, errors.New("unknown beacon state version")
 	}
+	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(uint64(t.Unix())) {
+		attr, err = payloadattribute.WithParentBeaconBlockRoot(attr, headRoot[:])
+		if err != nil {
+			return nil, false, err
+		}
+	}
 	payloadID, err := vs.forkchoiceUpdateForPayload(ctx, f, attr)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "could not prepare payload")

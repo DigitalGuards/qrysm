@@ -184,8 +184,17 @@ type BeaconChainConfig struct {
 	// Execution engine timeout value
 	ExecutionEngineTimeoutValue uint64 // ExecutionEngineTimeoutValue defines the seconds to wait before timing out engine endpoints with execution payload execution semantics (newPayload, forkchoiceUpdated).
 
+	// ExperimentalBeaconRootTime opts an isolated network into parent-root Engine
+	// transport. Nil preserves existing Zond rules and wire methods.
+	ExperimentalBeaconRootTime *uint64 `yaml:"EXPERIMENTAL_BEACON_ROOT_TIME"`
+
 	// Values introduced in Deneb hard fork
 	MaxPerEpochActivationChurnLimit uint64 `yaml:"MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT" spec:"true"` // MaxPerEpochActivationChurnLimit is the maximum amount of churn allotted for validator activation.
+}
+
+// ExperimentalBeaconRootsEnabled reports whether parent-root transport is active.
+func (b *BeaconChainConfig) ExperimentalBeaconRootsEnabled(timestamp uint64) bool {
+	return b.ExperimentalBeaconRootTime != nil && timestamp >= *b.ExperimentalBeaconRootTime
 }
 
 // InitializeForkSchedule initializes the schedules forks baked into the config.

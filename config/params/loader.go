@@ -258,6 +258,9 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 		fmt.Sprintf("DEPOSIT_CONTRACT_ADDRESS: %s", cfg.DepositContractAddress),
 	}
 
+	if cfg.ExperimentalBeaconRootTime != nil {
+		lines = append(lines, fmt.Sprintf("EXPERIMENTAL_BEACON_ROOT_TIME: %d", *cfg.ExperimentalBeaconRootTime))
+	}
 	yamlFile := []byte(strings.Join(lines, "\n"))
 	return yamlFile
 }
