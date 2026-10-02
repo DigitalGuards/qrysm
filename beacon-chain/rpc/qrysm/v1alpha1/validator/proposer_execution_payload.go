@@ -68,11 +68,19 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 		return nil, false, errors.Wrap(err, "could not get fee recipient in db")
 	}
 
+	// The payload timestamp selects both the attributes and the getPayload
+	// method, so derive it once from the beacon state's genesis time.
+	t, err := slots.ToTime(st.GenesisTime(), slot)
+	if err != nil {
+		return nil, false, err
+	}
+	timestamp := uint64(t.Unix())
+
 	if ok && proposerID == vIdx && payloadId != [8]byte{} { // Payload ID is cache hit. Return the cached payload ID.
 		var pid [8]byte
 		copy(pid[:], payloadId[:])
 		payloadIDCacheHit.Inc()
-		payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, pid, slot)
+		payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, pid, timestamp)
 		switch {
 		case err == nil:
 			warnIfFeeRecipientDiffers(payload, feeRecipient)
@@ -103,10 +111,6 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 		FinalizedBlockHash: finalizedBlockHash[:],
 	}
 
-	t, err := slots.ToTime(st.GenesisTime(), slot)
-	if err != nil {
-		return nil, false, err
-	}
 	var attr payloadattribute.Attributer
 	switch st.Version() {
 	case version.Zond:
@@ -115,7 +119,7 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 			return nil, false, err
 		}
 		attr, err = payloadattribute.New(&enginev1.PayloadAttributesV2{
-			Timestamp:             uint64(t.Unix()),
+			Timestamp:             timestamp,
 			PrevRandao:            random,
 			SuggestedFeeRecipient: feeRecipient.Bytes(),
 			Withdrawals:           withdrawals,
@@ -126,7 +130,7 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 	default:
 		return nil, false, errors.New("unknown beacon state version")
 	}
-	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(uint64(t.Unix())) {
+	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(timestamp) {
 		attr, err = payloadattribute.WithParentBeaconBlockRoot(attr, headRoot[:])
 		if err != nil {
 			return nil, false, err
@@ -139,7 +143,7 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 	if payloadID == nil {
 		return nil, false, fmt.Errorf("nil payload with block hash: %#x", parentHash)
 	}
-	payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, *payloadID, slot)
+	payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, *payloadID, timestamp)
 	if err != nil {
 		return nil, false, err
 	}

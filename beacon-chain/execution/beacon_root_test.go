@@ -13,7 +13,6 @@ import (
 	"github.com/theQRL/qrysm/config/params"
 	"github.com/theQRL/qrysm/consensus-types/blocks"
 	payloadattribute "github.com/theQRL/qrysm/consensus-types/payload-attribute"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	pb "github.com/theQRL/qrysm/proto/engine/v1"
 	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	"github.com/theQRL/qrysm/runtime/version"
@@ -149,14 +148,18 @@ func TestBeaconRootGetPayloadActivationAndMissingCapability(t *testing.T) {
 	activation := uint64(100) + params.BeaconConfig().SecondsPerSlot
 	params.BeaconConfig().ExperimentalBeaconRootTime = &activation
 	s, requests := beaconRootRPC(t, false)
-	for _, slot := range []primitives.Slot{0, 1} {
-		if _, overrideBuilder, err := s.GetPayload(context.Background(), [8]byte{1}, slot); err != nil {
+	// GetPayload trusts the caller's payload timestamp and ignores the
+	// deposit-tracking genesis time, which can be unset on a running node.
+	s.chainStartData = nil
+	for _, timestamp := range []uint64{activation - 1, activation} {
+		active := timestamp == activation
+		if _, overrideBuilder, err := s.GetPayload(context.Background(), [8]byte{1}, timestamp); err != nil {
 			t.Fatal(err)
-		} else if overrideBuilder != (slot == 1) {
+		} else if overrideBuilder != active {
 			t.Fatal("builder override differs from root activation")
 		}
 		want := GetPayloadMethodV2
-		if slot == 1 {
+		if active {
 			want = GetPayloadWithBeaconRootMethodV1
 		}
 		if request := <-requests; request.Method != want {
@@ -164,12 +167,8 @@ func TestBeaconRootGetPayloadActivationAndMissingCapability(t *testing.T) {
 		}
 	}
 	missing, _ := beaconRootRPC(t, true)
-	_, _, err := missing.GetPayload(context.Background(), [8]byte{1}, 1)
+	_, _, err := missing.GetPayload(context.Background(), [8]byte{1}, activation)
 	if err == nil || !strings.Contains(err.Error(), "both clients must enable compatible transport") || !strings.Contains(err.Error(), GetPayloadWithBeaconRootMethodV1) {
 		t.Fatalf("unclear unsupported transport error: %v", err)
-	}
-	s.chainStartData = nil
-	if _, _, err := s.GetPayload(context.Background(), [8]byte{1}, 1); err == nil {
-		t.Fatal("accepted uninitialized genesis time")
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/interfaces"
 	payloadattribute "github.com/theQRL/qrysm/consensus-types/payload-attribute"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	pb "github.com/theQRL/qrysm/proto/engine/v1"
 	"github.com/theQRL/qrysm/testing/util"
 )
@@ -28,9 +27,9 @@ func (e *beaconRootProposalEngine) ForkchoiceUpdated(_ context.Context, _ *pb.Fo
 	return &pb.PayloadIDBytes{2}, nil, nil
 }
 
-func (e *beaconRootProposalEngine) GetPayload(ctx context.Context, id [8]byte, slot primitives.Slot) (interfaces.ExecutionData, bool, error) {
+func (e *beaconRootProposalEngine) GetPayload(ctx context.Context, id [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error) {
 	e.requestedID = id
-	return e.EngineClient.GetPayload(ctx, id, slot)
+	return e.EngineClient.GetPayload(ctx, id, timestamp)
 }
 
 func TestBeaconRootProposalParentAndCacheSeparation(t *testing.T) {

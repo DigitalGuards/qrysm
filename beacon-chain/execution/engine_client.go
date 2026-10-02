@@ -19,10 +19,8 @@ import (
 	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/interfaces"
 	payloadattribute "github.com/theQRL/qrysm/consensus-types/payload-attribute"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	pb "github.com/theQRL/qrysm/proto/engine/v1"
 	"github.com/theQRL/qrysm/runtime/version"
-	"github.com/theQRL/qrysm/time/slots"
 	"go.opencensus.io/trace"
 )
 
@@ -79,7 +77,7 @@ type EngineCaller interface {
 	ForkchoiceUpdated(
 		ctx context.Context, state *pb.ForkchoiceState, attrs payloadattribute.Attributer,
 	) (*pb.PayloadIDBytes, []byte, error)
-	GetPayload(ctx context.Context, payloadId [8]byte, slot primitives.Slot) (interfaces.ExecutionData, bool, error)
+	GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error)
 	ExecutionBlockByHash(ctx context.Context, hash common.Hash, withTxs bool) (*pb.ExecutionBlock, error)
 }
 
@@ -210,8 +208,10 @@ func (s *Service) ForkchoiceUpdated(
 }
 
 // GetPayload calls the engine_getPayloadVX method via JSON-RPC.
-// It returns the execution data as well as the blobs bundle.
-func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, slot primitives.Slot) (interfaces.ExecutionData, bool, error) {
+// It returns the execution data as well as the blobs bundle. The caller passes
+// the payload timestamp it used for the payload attributes, so the method
+// choice and the attributes always come from the same clock.
+func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error) {
 	ctx, span := trace.StartSpan(ctx, "execution-chain.engine-api-client.GetPayload")
 	defer span.End()
 	start := time.Now()
@@ -225,17 +225,8 @@ func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, slot primit
 
 	result := &pb.ExecutionPayloadZondWithValue{}
 	method := GetPayloadMethodV2
-	if params.BeaconConfig().ExperimentalBeaconRootTime != nil {
-		if s.chainStartData == nil {
-			return nil, false, errors.New("parent-root payload retrieval requires initialized genesis time")
-		}
-		timestamp, err := slots.ToTime(s.chainStartData.GenesisTime, slot)
-		if err != nil {
-			return nil, false, err
-		}
-		if params.BeaconConfig().ExperimentalBeaconRootsEnabled(uint64(timestamp.Unix())) {
-			method = GetPayloadWithBeaconRootMethodV1
-		}
+	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(timestamp) {
+		method = GetPayloadWithBeaconRootMethodV1
 	}
 	err := s.executionClient().CallContext(ctx, result, method, pb.PayloadIDBytes(payloadId))
 	if err != nil {
