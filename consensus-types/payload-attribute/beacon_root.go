@@ -3,7 +3,8 @@ package payloadattribute
 import "fmt"
 
 // BeaconRootAttributer carries the selected beacon parent outside the unchanged
-// Zond execution-payload SSZ. Engine transport uses this only after activation.
+// Zond execution-payload SSZ, like the EIP-4788 parentBeaconBlockRoot payload
+// attribute. Engine transport uses this only after activation.
 type BeaconRootAttributer interface {
 	Attributer
 	ParentBeaconBlockRoot() [32]byte

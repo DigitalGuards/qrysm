@@ -184,8 +184,9 @@ type BeaconChainConfig struct {
 	// Execution engine timeout value
 	ExecutionEngineTimeoutValue uint64 // ExecutionEngineTimeoutValue defines the seconds to wait before timing out engine endpoints with execution payload execution semantics (newPayload, forkchoiceUpdated).
 
-	// ExperimentalBeaconRootTime opts an isolated network into parent-root Engine
-	// transport. Nil preserves existing Zond rules and wire methods.
+	// ExperimentalBeaconRootTime opts an isolated network into EIP-4788 style
+	// parent-root Engine transport. Nil preserves existing Zond rules and wire
+	// methods.
 	ExperimentalBeaconRootTime *uint64 `yaml:"EXPERIMENTAL_BEACON_ROOT_TIME"`
 
 	// Values introduced in Deneb hard fork

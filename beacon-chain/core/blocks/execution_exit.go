@@ -14,7 +14,9 @@ import (
 )
 
 // ProcessExecutionExitRequests is an exploratory handler, intentionally uncalled
-// by the canonical block transition. Integration requires fork-gated beacon
+// by the canonical block transition. It is the QRL counterpart of the full-exit
+// branch of process_withdrawal_request from EIP-7002 in the Electra consensus
+// specs. Integration requires fork-gated beacon
 // containers and versioned Engine transport that authenticate these exact bytes
 // against execution-derived requests. A future transition must invoke this after
 // conventional operations so all exit paths share the resulting native churn.

@@ -1,5 +1,8 @@
 // Package executionrequests contains the exploratory full-exit request codec.
-// Its format and bounds require a coordinated fork before consensus use.
+// It adapts the EIP-7002 withdrawal request (https://eips.ethereum.org/EIPS/eip-7002)
+// to full exits identified by validator index and ML-DSA public-key root, carried
+// as an EIP-7685 typed request (https://eips.ethereum.org/EIPS/eip-7685). Its
+// format and bounds require a coordinated fork before consensus use.
 package executionrequests
 
 import (

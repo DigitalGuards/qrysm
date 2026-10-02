@@ -34,6 +34,9 @@ const (
 	// GetPayloadMethodV2 v2 request string for JSON-RPC.
 	GetPayloadMethodV2 = "engine_getPayloadV2"
 	// Experimental parent-root methods preserve the existing Zond payload SSZ.
+	// They carry the parent beacon block root the way EIP-4788 extended
+	// Ethereum's engine_forkchoiceUpdatedV3, engine_getPayloadV3 and
+	// engine_newPayloadV3.
 	NewPayloadWithBeaconRootMethodV1        = "engine_newPayloadWithBeaconRootV1"
 	ForkchoiceUpdatedWithBeaconRootMethodV1 = "engine_forkchoiceUpdatedWithBeaconRootV1"
 	GetPayloadWithBeaconRootMethodV1        = "engine_getPayloadWithBeaconRootV1"
