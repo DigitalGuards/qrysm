@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,7 +25,8 @@ type beaconRootRPCRequest struct {
 	Params []json.RawMessage `json:"params"`
 }
 
-func beaconRootRPC(t *testing.T, unsupported bool) (*Service, <-chan beaconRootRPCRequest) {
+// beaconRootRPC answers every request with errorCode, or with a fixture when it is zero.
+func beaconRootRPC(t *testing.T, errorCode int) (*Service, <-chan beaconRootRPCRequest) {
 	t.Helper()
 	requests := make(chan beaconRootRPCRequest, 16)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,8 +37,8 @@ func beaconRootRPC(t *testing.T, unsupported bool) (*Service, <-chan beaconRootR
 		}
 		requests <- request
 		response := map[string]any{"jsonrpc": "2.0", "id": request.ID}
-		if unsupported {
-			response["error"] = map[string]any{"code": -32601, "message": "method not found"}
+		if errorCode != 0 {
+			response["error"] = map[string]any{"code": errorCode, "message": "engine error"}
 		} else {
 			switch request.Method {
 			case NewPayloadMethodV2, NewPayloadWithBeaconRootMethodV1:
@@ -65,7 +67,7 @@ func TestBeaconRootEngineActivationAndProvenance(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	activation := uint64(160)
 	params.BeaconConfig().ExperimentalBeaconRootTime = &activation
-	s, requests := beaconRootRPC(t, false)
+	s, requests := beaconRootRPC(t, 0)
 	ctx := context.Background()
 	root := common.Hash{0: 0x81, 31: 0x92}
 	for _, timestamp := range []uint64{159, 160} {
@@ -147,7 +149,7 @@ func TestBeaconRootGetPayloadActivationAndMissingCapability(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	activation := uint64(100) + params.BeaconConfig().SecondsPerSlot
 	params.BeaconConfig().ExperimentalBeaconRootTime = &activation
-	s, requests := beaconRootRPC(t, false)
+	s, requests := beaconRootRPC(t, 0)
 	// GetPayload trusts the caller's payload timestamp and ignores the
 	// deposit-tracking genesis time, which can be unset on a running node.
 	s.chainStartData = nil
@@ -166,9 +168,22 @@ func TestBeaconRootGetPayloadActivationAndMissingCapability(t *testing.T) {
 			t.Fatalf("got %s, want %s", request.Method, want)
 		}
 	}
-	missing, _ := beaconRootRPC(t, true)
-	_, _, err := missing.GetPayload(context.Background(), [8]byte{1}, activation)
-	if err == nil || !strings.Contains(err.Error(), "both clients must enable compatible transport") || !strings.Contains(err.Error(), GetPayloadWithBeaconRootMethodV1) {
-		t.Fatalf("unclear unsupported transport error: %v", err)
+	// Only a missing method or an unsupported fork means the clients disagree
+	// about the experimental transport. Other errors keep their own cause.
+	for _, item := range []struct {
+		code int
+		hint bool
+	}{{-32601, true}, {-38005, true}, {-38001, false}, {-32603, false}} {
+		engine, _ := beaconRootRPC(t, item.code)
+		_, _, err := engine.GetPayload(context.Background(), [8]byte{1}, activation)
+		if err == nil {
+			t.Fatalf("code %d: no error", item.code)
+		}
+		if hint := strings.Contains(err.Error(), "both clients must enable compatible transport"); hint != item.hint {
+			t.Fatalf("code %d: transport hint %v in %v", item.code, hint, err)
+		}
+		if item.code == -38001 && !errors.Is(err, ErrUnknownPayload) {
+			t.Fatalf("unknown payload lost its sentinel: %v", err)
+		}
 	}
 }
