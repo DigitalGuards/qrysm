@@ -19,7 +19,6 @@ import (
 	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/interfaces"
 	payloadattribute "github.com/theQRL/qrysm/consensus-types/payload-attribute"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	pb "github.com/theQRL/qrysm/proto/engine/v1"
 	"github.com/theQRL/qrysm/runtime/version"
 	"go.opencensus.io/trace"
@@ -32,6 +31,13 @@ const (
 	ForkchoiceUpdatedMethodV2 = "engine_forkchoiceUpdatedV2"
 	// GetPayloadMethodV2 v2 request string for JSON-RPC.
 	GetPayloadMethodV2 = "engine_getPayloadV2"
+	// Experimental parent-root methods preserve the existing Zond payload SSZ.
+	// They carry the parent beacon block root the way EIP-4788 extended
+	// Ethereum's engine_forkchoiceUpdatedV3, engine_getPayloadV3 and
+	// engine_newPayloadV3.
+	NewPayloadWithBeaconRootMethodV1        = "engine_newPayloadWithBeaconRootV1"
+	ForkchoiceUpdatedWithBeaconRootMethodV1 = "engine_forkchoiceUpdatedWithBeaconRootV1"
+	GetPayloadWithBeaconRootMethodV1        = "engine_getPayloadWithBeaconRootV1"
 	// ExecutionBlockByHashMethod request string for JSON-RPC.
 	ExecutionBlockByHashMethod = "qrl_getBlockByHash"
 	// ExecutionBlockByNumberMethod request string for JSON-RPC.
@@ -71,7 +77,7 @@ type EngineCaller interface {
 	ForkchoiceUpdated(
 		ctx context.Context, state *pb.ForkchoiceState, attrs payloadattribute.Attributer,
 	) (*pb.PayloadIDBytes, []byte, error)
-	GetPayload(ctx context.Context, payloadId [8]byte, slot primitives.Slot) (interfaces.ExecutionData, bool, error)
+	GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error)
 	ExecutionBlockByHash(ctx context.Context, hash common.Hash, withTxs bool) (*pb.ExecutionBlock, error)
 }
 
@@ -97,9 +103,18 @@ func (s *Service) NewPayload(ctx context.Context, payload interfaces.ExecutionDa
 		if !ok {
 			return nil, errors.New("execution data must be a Zond execution payload")
 		}
-		err := s.executionClient().CallContext(ctx, result, NewPayloadMethodV2, payloadPb)
+		method := NewPayloadMethodV2
+		args := []any{payloadPb}
+		if params.BeaconConfig().ExperimentalBeaconRootsEnabled(payloadPb.Timestamp) {
+			if parentBlockRoot == nil {
+				return nil, errors.New("activated parent-root payload requires its enclosing beacon parent")
+			}
+			method = NewPayloadWithBeaconRootMethodV1
+			args = append(args, *parentBlockRoot)
+		}
+		err := s.executionClient().CallContext(ctx, result, method, args...)
 		if err != nil {
-			return nil, handleRPCError(err)
+			return nil, experimentalEngineError(method, err)
 		}
 	default:
 		return nil, errors.New("unknown execution data type")
@@ -146,9 +161,28 @@ func (s *Service) ForkchoiceUpdated(
 		if err != nil {
 			return nil, nil, err
 		}
-		err = s.executionClient().CallContext(ctx, result, ForkchoiceUpdatedMethodV2, state, a)
+		method := ForkchoiceUpdatedMethodV2
+		var wireAttributes any = a
+		if a != nil && params.BeaconConfig().ExperimentalBeaconRootsEnabled(a.Timestamp) {
+			rootAttributes, ok := attrs.(payloadattribute.BeaconRootAttributer)
+			if !ok {
+				return nil, nil, errors.New("activated payload attributes require the selected beacon parent")
+			}
+			root := rootAttributes.ParentBeaconBlockRoot()
+			method = ForkchoiceUpdatedWithBeaconRootMethodV1
+			withdrawals := a.Withdrawals
+			if withdrawals == nil {
+				withdrawals = make([]*pb.Withdrawal, 0)
+			}
+			wireAttributes = &beaconRootPayloadAttributes{
+				Timestamp: hexutil.Uint64(a.Timestamp), PrevRandao: a.PrevRandao,
+				SuggestedFeeRecipient: hexutil.BytesQ(a.SuggestedFeeRecipient),
+				Withdrawals:           withdrawals, ParentBeaconBlockRoot: common.Hash(root),
+			}
+		}
+		err = s.executionClient().CallContext(ctx, result, method, state, wireAttributes)
 		if err != nil {
-			return nil, nil, handleRPCError(err)
+			return nil, nil, experimentalEngineError(method, err)
 		}
 	default:
 		return nil, nil, fmt.Errorf("unknown payload attribute version: %v", attrs.Version())
@@ -174,8 +208,10 @@ func (s *Service) ForkchoiceUpdated(
 }
 
 // GetPayload calls the engine_getPayloadVX method via JSON-RPC.
-// It returns the execution data as well as the blobs bundle.
-func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, slot primitives.Slot) (interfaces.ExecutionData, bool, error) {
+// It returns the execution data as well as the blobs bundle. The caller passes
+// the payload timestamp it used for the payload attributes, so the method
+// choice and the attributes always come from the same clock.
+func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error) {
 	ctx, span := trace.StartSpan(ctx, "execution-chain.engine-api-client.GetPayload")
 	defer span.End()
 	start := time.Now()
@@ -188,9 +224,13 @@ func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, slot primit
 	defer cancel()
 
 	result := &pb.ExecutionPayloadZondWithValue{}
-	err := s.executionClient().CallContext(ctx, result, GetPayloadMethodV2, pb.PayloadIDBytes(payloadId))
+	method := GetPayloadMethodV2
+	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(timestamp) {
+		method = GetPayloadWithBeaconRootMethodV1
+	}
+	err := s.executionClient().CallContext(ctx, result, method, pb.PayloadIDBytes(payloadId))
 	if err != nil {
-		return nil, false, handleRPCError(err)
+		return nil, false, experimentalEngineError(method, err)
 	}
 	if result.Payload == nil {
 		return nil, false, ErrNilResponse
@@ -202,7 +242,9 @@ func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, slot primit
 	if err != nil {
 		return nil, false, err
 	}
-	return ed, false, nil
+	// The existing builder API cannot bind bids to this experimental beacon
+	// parent. Activated proposals must retain the local root-aware payload.
+	return ed, method == GetPayloadWithBeaconRootMethodV1, nil
 }
 
 // LatestExecutionBlock fetches the latest execution engine block by calling

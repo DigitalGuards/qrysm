@@ -72,7 +72,7 @@ func TestClient_IPC(t *testing.T) {
 		want, ok := fix["ExecutionPayloadZondWithValue"].(*pb.ExecutionPayloadZondWithValue)
 		require.Equal(t, true, ok)
 		payloadId := [8]byte{1}
-		resp, override, err := srv.GetPayload(ctx, payloadId, params.BeaconConfig().SlotsPerEpoch)
+		resp, override, err := srv.GetPayload(ctx, payloadId, 0)
 		require.NoError(t, err)
 		require.Equal(t, false, override)
 		resPb, err := resp.PbZond()
@@ -161,7 +161,7 @@ func TestClient_HTTP(t *testing.T) {
 		client.rpcClient = rpcClient
 
 		// We call the RPC method via HTTP and expect a proper result.
-		resp, override, err := client.GetPayload(ctx, payloadId, params.BeaconConfig().SlotsPerEpoch)
+		resp, override, err := client.GetPayload(ctx, payloadId, 0)
 		require.NoError(t, err)
 		require.Equal(t, false, override)
 		pb, err := resp.PbZond()
@@ -621,7 +621,7 @@ func TestEngineResponses_NilWithdrawal(t *testing.T) {
 				name string
 				call func() error
 			}{
-				{"get payload", func() error { _, _, err := s.GetPayload(ctx, [8]byte{1}, 1); return err }},
+				{"get payload", func() error { _, _, err := s.GetPayload(ctx, [8]byte{1}, 0); return err }},
 				{"bodies by hash", func() error { _, err := s.GetPayloadBodiesByHash(ctx, []common.Hash{{1}}); return err }},
 				{"bodies by range", func() error { _, err := s.GetPayloadBodiesByRange(ctx, 1, 1); return err }},
 				{"reconstruct block", func() error { _, err := s.ReconstructFullBlock(ctx, block); return err }},

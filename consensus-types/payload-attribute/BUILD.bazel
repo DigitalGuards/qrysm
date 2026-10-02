@@ -3,6 +3,7 @@ load("@qrysm//tools/go:def.bzl", "go_library", "go_test")
 go_library(
     name = "payload-attribute",
     srcs = [
+        "beacon_root.go",
         "getters.go",
         "interface.go",
         "types.go",
@@ -19,7 +20,7 @@ go_library(
 
 go_test(
     name = "payload-attribute_test",
-    srcs = ["getters_test.go"],
+    srcs = ["beacon_root_test.go", "getters_test.go"],
     embed = [":payload-attribute"],
     deps = [
         "//proto/engine/v1:engine",
