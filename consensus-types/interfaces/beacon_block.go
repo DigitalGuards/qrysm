@@ -61,6 +61,7 @@ type ReadOnlyBeaconBlockBody interface {
 	Attestations() []*qrysmpb.Attestation
 	Deposits() []*qrysmpb.Deposit
 	VoluntaryExits() []*qrysmpb.SignedVoluntaryExit
+	ExecutionExitRequests() []*qrysmpb.ExecutionExitRequest
 	SyncAggregate() (*qrysmpb.SyncAggregate, error)
 	IsNil() bool
 	HashTreeRoot() ([field_params.RootLength]byte, error)
@@ -73,6 +74,7 @@ type SignedBeaconBlock interface {
 	SetExecution(ExecutionData) error
 	SetSyncAggregate(*qrysmpb.SyncAggregate) error
 	SetVoluntaryExits([]*qrysmpb.SignedVoluntaryExit)
+	SetExecutionExitRequests([]*qrysmpb.ExecutionExitRequest)
 	SetDeposits([]*qrysmpb.Deposit)
 	SetAttestations([]*qrysmpb.Attestation)
 	SetAttesterSlashings([]*qrysmpb.AttesterSlashing)

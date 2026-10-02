@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	"testing"
 
 	chainMock "github.com/theQRL/qrysm/beacon-chain/blockchain/testing"
@@ -30,6 +31,11 @@ func (e *beaconRootProposalEngine) ForkchoiceUpdated(_ context.Context, _ *pb.Fo
 func (e *beaconRootProposalEngine) GetPayload(ctx context.Context, id [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error) {
 	e.requestedID = id
 	return e.EngineClient.GetPayload(ctx, id, timestamp)
+}
+
+func (e *beaconRootProposalEngine) GetPayloadWithRequests(ctx context.Context, id [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error) {
+	payload, overrideBuilder, err := e.GetPayload(ctx, id, timestamp)
+	return payload, overrideBuilder, nil, err
 }
 
 func TestBeaconRootProposalParentAndCacheSeparation(t *testing.T) {
@@ -62,7 +68,7 @@ func TestBeaconRootProposalParentAndCacheSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := vs.getLocalPayload(context.Background(), block.Block(), s); err != nil {
+	if _, _, _, err := vs.getLocalPayload(context.Background(), block.Block(), s); err != nil {
 		t.Fatal(err)
 	}
 	bound, ok := engine.attributes.(payloadattribute.BeaconRootAttributer)
@@ -71,7 +77,7 @@ func TestBeaconRootProposalParentAndCacheSeparation(t *testing.T) {
 	}
 	engine.attributes = nil
 	vs.ProposerSlotIndexCache.SetProposerAndPayloadIDs(s.Slot(), 0, [8]byte{3}, newRoot)
-	if _, _, err := vs.getLocalPayload(context.Background(), block.Block(), s); err != nil {
+	if _, _, _, err := vs.getLocalPayload(context.Background(), block.Block(), s); err != nil {
 		t.Fatal(err)
 	}
 	if engine.attributes != nil || engine.requestedID != [8]byte{3} {

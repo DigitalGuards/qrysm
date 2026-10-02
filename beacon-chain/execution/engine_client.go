@@ -1,9 +1,13 @@
 package execution
 
 import (
+	"encoding/json"
+
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/theQRL/qrysm/consensus-types/executionrequests"
+	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	"math/big"
 	"strings"
 	"time"
@@ -74,10 +78,16 @@ type ExecutionPayloadReconstructor interface {
 // execution node's engine service via JSON-RPC.
 type EngineCaller interface {
 	NewPayload(ctx context.Context, payload interfaces.ExecutionData, versionedHashes []common.Hash, parentBlockRoot *common.Hash) ([]byte, error)
+	// NewPayloadWithRequests also sends the block's demo exit requests once
+	// the exit-request transport is active.
+	NewPayloadWithRequests(ctx context.Context, payload interfaces.ExecutionData, versionedHashes []common.Hash, parentBlockRoot *common.Hash, requests []*qrysmpb.ExecutionExitRequest) ([]byte, error)
 	ForkchoiceUpdated(
 		ctx context.Context, state *pb.ForkchoiceState, attrs payloadattribute.Attributer,
 	) (*pb.PayloadIDBytes, []byte, error)
 	GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error)
+	// GetPayloadWithRequests also returns the demo exit requests the execution
+	// client drained into the payload.
+	GetPayloadWithRequests(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error)
 	ExecutionBlockByHash(ctx context.Context, hash common.Hash, withTxs bool) (*pb.ExecutionBlock, error)
 }
 
@@ -85,6 +95,17 @@ var EmptyBlockHash = errors.New("Block hash is empty 0x0000...")
 
 // NewPayload calls the engine_newPayloadVX method via JSON-RPC.
 func (s *Service) NewPayload(ctx context.Context, payload interfaces.ExecutionData, versionedHashes []common.Hash, parentBlockRoot *common.Hash) ([]byte, error) {
+	if params.BeaconConfig().ExperimentalExitRequestsEnabled(payload.Timestamp()) {
+		return nil, errors.New("exit-request payload requires its block's execution requests")
+	}
+	return s.NewPayloadWithRequests(ctx, payload, versionedHashes, parentBlockRoot, nil)
+}
+
+// NewPayloadWithRequests calls the engine_newPayloadVX method via JSON-RPC.
+// Once the demo exit-request transport is active it appends the block's
+// EIP-7685 request groups, which the execution client checks against the
+// payload's requests hash.
+func (s *Service) NewPayloadWithRequests(ctx context.Context, payload interfaces.ExecutionData, versionedHashes []common.Hash, parentBlockRoot *common.Hash, requests []*qrysmpb.ExecutionExitRequest) ([]byte, error) {
 	ctx, span := trace.StartSpan(ctx, "execution-chain.engine-api-client.NewPayload")
 	defer span.End()
 	start := time.Now()
@@ -111,6 +132,19 @@ func (s *Service) NewPayload(ctx context.Context, payload interfaces.ExecutionDa
 			}
 			method = NewPayloadWithBeaconRootMethodV1
 			args = append(args, *parentBlockRoot)
+		}
+		if params.BeaconConfig().ExperimentalExitRequestsEnabled(payloadPb.Timestamp) {
+			groups, err := executionrequests.Groups(requests)
+			if err != nil {
+				return nil, err
+			}
+			encoded := make([]hexutil.Bytes, len(groups))
+			for i, group := range groups {
+				encoded[i] = group
+			}
+			args = append(args, encoded)
+		} else if len(requests) != 0 {
+			return nil, errors.New("execution exit requests before the exit-request transport is active")
 		}
 		err := s.executionClient().CallContext(ctx, result, method, args...)
 		if err != nil {
@@ -212,6 +246,16 @@ func (s *Service) ForkchoiceUpdated(
 // the payload timestamp it used for the payload attributes, so the method
 // choice and the attributes always come from the same clock.
 func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, error) {
+	payload, overrideBuilder, requests, err := s.GetPayloadWithRequests(ctx, payloadId, timestamp)
+	if err == nil && len(requests) != 0 {
+		return nil, false, errors.New("payload carries execution exit requests; use GetPayloadWithRequests")
+	}
+	return payload, overrideBuilder, err
+}
+
+// GetPayloadWithRequests is GetPayload plus the demo exit requests that the
+// execution client drained into the payload once the transport is active.
+func (s *Service) GetPayloadWithRequests(ctx context.Context, payloadId [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error) {
 	ctx, span := trace.StartSpan(ctx, "execution-chain.engine-api-client.GetPayload")
 	defer span.End()
 	start := time.Now()
@@ -228,23 +272,44 @@ func (s *Service) GetPayload(ctx context.Context, payloadId [8]byte, timestamp u
 	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(timestamp) {
 		method = GetPayloadWithBeaconRootMethodV1
 	}
-	err := s.executionClient().CallContext(ctx, result, method, pb.PayloadIDBytes(payloadId))
+	var raw json.RawMessage
+	err := s.executionClient().CallContext(ctx, &raw, method, pb.PayloadIDBytes(payloadId))
 	if err != nil {
-		return nil, false, experimentalEngineError(method, err)
+		return nil, false, nil, experimentalEngineError(method, err)
+	}
+	if err := json.Unmarshal(raw, result); err != nil {
+		return nil, false, nil, err
 	}
 	if result.Payload == nil {
-		return nil, false, ErrNilResponse
+		return nil, false, nil, ErrNilResponse
 	}
 	if err := validateWithdrawals(result.Payload.Withdrawals); err != nil {
-		return nil, false, err
+		return nil, false, nil, err
+	}
+	var requests []*qrysmpb.ExecutionExitRequest
+	if params.BeaconConfig().ExperimentalExitRequestsEnabled(timestamp) {
+		var envelope struct {
+			ExecutionRequests []hexutil.Bytes `json:"executionRequests"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return nil, false, nil, err
+		}
+		groups := make([][]byte, len(envelope.ExecutionRequests))
+		for i, group := range envelope.ExecutionRequests {
+			groups[i] = group
+		}
+		requests, err = executionrequests.FromGroups(groups)
+		if err != nil {
+			return nil, false, nil, errors.Wrap(err, "invalid execution requests from execution client")
+		}
 	}
 	ed, err := blocks.WrappedExecutionPayloadZond(result.Payload, blocks.PayloadValueToShor(result.Value))
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	// The existing builder API cannot bind bids to this experimental beacon
 	// parent. Activated proposals must retain the local root-aware payload.
-	return ed, method == GetPayloadWithBeaconRootMethodV1, nil
+	return ed, method == GetPayloadWithBeaconRootMethodV1, requests, nil
 }
 
 // LatestExecutionBlock fetches the latest execution engine block by calling

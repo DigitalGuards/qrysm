@@ -261,6 +261,9 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 	if cfg.ExperimentalBeaconRootTime != nil {
 		lines = append(lines, fmt.Sprintf("EXPERIMENTAL_BEACON_ROOT_TIME: %d", *cfg.ExperimentalBeaconRootTime))
 	}
+	if cfg.ExperimentalExitRequestsTime != nil {
+		lines = append(lines, fmt.Sprintf("EXPERIMENTAL_EXIT_REQUESTS_TIME: %d", *cfg.ExperimentalExitRequestsTime))
+	}
 	yamlFile := []byte(strings.Join(lines, "\n"))
 	return yamlFile
 }

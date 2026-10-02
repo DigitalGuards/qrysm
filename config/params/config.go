@@ -188,9 +188,18 @@ type BeaconChainConfig struct {
 	// parent-root Engine transport. Nil preserves existing Zond rules and wire
 	// methods.
 	ExperimentalBeaconRootTime *uint64 `yaml:"EXPERIMENTAL_BEACON_ROOT_TIME"`
+	// ExperimentalExitRequestsTime opts a demo network into execution-triggered
+	// exit transport. It must match the execution client's qrlExitRequestsTime.
+	ExperimentalExitRequestsTime *uint64 `yaml:"EXPERIMENTAL_EXIT_REQUESTS_TIME"`
 
 	// Values introduced in Deneb hard fork
 	MaxPerEpochActivationChurnLimit uint64 `yaml:"MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT" spec:"true"` // MaxPerEpochActivationChurnLimit is the maximum amount of churn allotted for validator activation.
+}
+
+// ExperimentalExitRequestsEnabled reports whether payloads at timestamp carry
+// execution-triggered exit requests. It requires parent-root transport.
+func (b *BeaconChainConfig) ExperimentalExitRequestsEnabled(timestamp uint64) bool {
+	return b.ExperimentalBeaconRootsEnabled(timestamp) && b.ExperimentalExitRequestsTime != nil && timestamp >= *b.ExperimentalExitRequestsTime
 }
 
 // ExperimentalBeaconRootsEnabled reports whether parent-root transport is active.

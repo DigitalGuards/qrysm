@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/theQRL/qrysm/consensus-types/executionrequests"
 
 	"github.com/pkg/errors"
 	"github.com/theQRL/qrysm/beacon-chain/core/altair"
@@ -388,6 +389,17 @@ func altairOperations(
 	st, err = b.ProcessVoluntaryExits(ctx, st, signedBeaconBlock.Block().Body().VoluntaryExits())
 	if err != nil {
 		return nil, errors.Wrap(err, "could not process voluntary exits")
+	}
+	// Demo: execution-triggered exits run after signed exits so both paths
+	// share the same churn. The execution client binds these exact requests
+	// to the payload's requests hash during newPayload.
+	records, err := executionrequests.Records(signedBeaconBlock.Block().Body().ExecutionExitRequests())
+	if err != nil {
+		return nil, errors.Wrap(err, "could not encode execution exit requests")
+	}
+	st, err = b.ProcessExecutionExitRequests(ctx, st, records, executionrequests.MaxPerBlock)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not process execution exit requests")
 	}
 	return st, nil
 }

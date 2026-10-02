@@ -58,6 +58,7 @@ ssz_gen_marshal(
     objs = [
         "BeaconBlockZond",
         "BeaconBlockBodyZond",
+        "ExecutionExitRequest",
         "SignedBeaconBlockZond",
         "SignedBlindedBeaconBlockZond",
         "BlindedBeaconBlockZond",

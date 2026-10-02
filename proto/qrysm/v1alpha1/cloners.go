@@ -348,16 +348,17 @@ func CopyBeaconBlockBodyZond(body *BeaconBlockBodyZond) *BeaconBlockBodyZond {
 		return nil
 	}
 	return &BeaconBlockBodyZond{
-		RandaoReveal:      bytesutil.SafeCopyBytes(body.RandaoReveal),
-		ExecutionData:     CopyExecutionData(body.ExecutionData),
-		Graffiti:          bytesutil.SafeCopyBytes(body.Graffiti),
-		ProposerSlashings: CopyProposerSlashings(body.ProposerSlashings),
-		AttesterSlashings: CopyAttesterSlashings(body.AttesterSlashings),
-		Attestations:      CopyAttestations(body.Attestations),
-		Deposits:          CopyDeposits(body.Deposits),
-		VoluntaryExits:    CopySignedVoluntaryExits(body.VoluntaryExits),
-		SyncAggregate:     CopySyncAggregate(body.SyncAggregate),
-		ExecutionPayload:  CopyExecutionPayloadZond(body.ExecutionPayload),
+		RandaoReveal:          bytesutil.SafeCopyBytes(body.RandaoReveal),
+		ExecutionData:         CopyExecutionData(body.ExecutionData),
+		Graffiti:              bytesutil.SafeCopyBytes(body.Graffiti),
+		ProposerSlashings:     CopyProposerSlashings(body.ProposerSlashings),
+		AttesterSlashings:     CopyAttesterSlashings(body.AttesterSlashings),
+		Attestations:          CopyAttestations(body.Attestations),
+		Deposits:              CopyDeposits(body.Deposits),
+		VoluntaryExits:        CopySignedVoluntaryExits(body.VoluntaryExits),
+		ExecutionExitRequests: CopyExecutionExitRequests(body.ExecutionExitRequests),
+		SyncAggregate:         CopySyncAggregate(body.SyncAggregate),
+		ExecutionPayload:      CopyExecutionPayloadZond(body.ExecutionPayload),
 	}
 }
 
@@ -400,6 +401,7 @@ func CopyBlindedBeaconBlockBodyZond(body *BlindedBeaconBlockBodyZond) *BlindedBe
 		Attestations:           CopyAttestations(body.Attestations),
 		Deposits:               CopyDeposits(body.Deposits),
 		VoluntaryExits:         CopySignedVoluntaryExits(body.VoluntaryExits),
+		ExecutionExitRequests:  CopyExecutionExitRequests(body.ExecutionExitRequests),
 		SyncAggregate:          CopySyncAggregate(body.SyncAggregate),
 		ExecutionPayloadHeader: CopyExecutionPayloadHeaderZond(body.ExecutionPayloadHeader),
 	}
@@ -494,4 +496,23 @@ func CopyHistoricalSummaries(summaries []*HistoricalSummary) []*HistoricalSummar
 		}
 	}
 	return newSummaries
+}
+
+// CopyExecutionExitRequests copies the demo execution-triggered exit requests.
+func CopyExecutionExitRequests(requests []*ExecutionExitRequest) []*ExecutionExitRequest {
+	if requests == nil {
+		return nil
+	}
+	out := make([]*ExecutionExitRequest, len(requests))
+	for i, r := range requests {
+		if r == nil {
+			continue
+		}
+		out[i] = &ExecutionExitRequest{
+			SourceAddress:       bytesutil.SafeCopyBytes(r.SourceAddress),
+			ValidatorIndex:      r.ValidatorIndex,
+			ValidatorPubkeyRoot: bytesutil.SafeCopyBytes(r.ValidatorPubkeyRoot),
+		}
+	}
+	return out
 }

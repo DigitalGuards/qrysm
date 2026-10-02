@@ -211,6 +211,10 @@ func (BeaconBlockBody) VoluntaryExits() []*qrysmpb.SignedVoluntaryExit {
 	panic("implement me")
 }
 
+func (BeaconBlockBody) ExecutionExitRequests() []*qrysmpb.ExecutionExitRequest {
+	panic("implement me")
+}
+
 func (BeaconBlockBody) SyncAggregate() (*qrysmpb.SyncAggregate, error) {
 	panic("implement me")
 }
@@ -264,6 +268,10 @@ func (b *BeaconBlockBody) SetDeposits([]*qrysmpb.Deposit) {
 }
 
 func (b *BeaconBlockBody) SetVoluntaryExits([]*qrysmpb.SignedVoluntaryExit) {
+	panic("implement me")
+}
+
+func (b *BeaconBlockBody) SetExecutionExitRequests([]*qrysmpb.ExecutionExitRequest) {
 	panic("implement me")
 }
 

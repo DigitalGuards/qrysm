@@ -602,16 +602,17 @@ func genSyncAggregate() *v1alpha1.SyncAggregate {
 
 func genBeaconBlockBodyZond() *v1alpha1.BeaconBlockBodyZond {
 	return &v1alpha1.BeaconBlockBodyZond{
-		RandaoReveal:      bytes(32),
-		ExecutionData:     genExecutionData(),
-		Graffiti:          bytes(32),
-		ProposerSlashings: genProposerSlashings(5),
-		AttesterSlashings: genAttesterSlashings(5),
-		Attestations:      genAttestations(10),
-		Deposits:          genDeposits(5),
-		VoluntaryExits:    genSignedVoluntaryExits(12),
-		SyncAggregate:     genSyncAggregate(),
-		ExecutionPayload:  genPayloadZond(),
+		RandaoReveal:          bytes(32),
+		ExecutionData:         genExecutionData(),
+		Graffiti:              bytes(32),
+		ProposerSlashings:     genProposerSlashings(5),
+		AttesterSlashings:     genAttesterSlashings(5),
+		Attestations:          genAttestations(10),
+		Deposits:              genDeposits(5),
+		VoluntaryExits:        genSignedVoluntaryExits(12),
+		ExecutionExitRequests: genExecutionExitRequests(2),
+		SyncAggregate:         genSyncAggregate(),
+		ExecutionPayload:      genPayloadZond(),
 	}
 }
 
@@ -642,6 +643,7 @@ func genBlindedBeaconBlockBodyZond() *v1alpha1.BlindedBeaconBlockBodyZond {
 		Attestations:           genAttestations(10),
 		Deposits:               genDeposits(5),
 		VoluntaryExits:         genSignedVoluntaryExits(12),
+		ExecutionExitRequests:  genExecutionExitRequests(2),
 		SyncAggregate:          genSyncAggregate(),
 		ExecutionPayloadHeader: genPayloadHeaderZond(),
 	}
@@ -741,4 +743,16 @@ func genWithdrawal() *enginev1.Withdrawal {
 		Address:        bytes(20),
 		Amount:         55555,
 	}
+}
+
+func genExecutionExitRequests(num int) []*v1alpha1.ExecutionExitRequest {
+	requests := make([]*v1alpha1.ExecutionExitRequest, num)
+	for i := range requests {
+		requests[i] = &v1alpha1.ExecutionExitRequest{
+			SourceAddress:       bytes(64),
+			ValidatorIndex:      7,
+			ValidatorPubkeyRoot: bytes(32),
+		}
+	}
+	return requests
 }

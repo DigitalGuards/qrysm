@@ -90,6 +90,12 @@ func (b *SignedBeaconBlock) SetVoluntaryExits(v []*qrysmpb.SignedVoluntaryExit) 
 	b.block.body.voluntaryExits = v
 }
 
+// SetExecutionExitRequests sets the demo execution-triggered exit requests.
+// This function is not thread safe, it is only used during block creation.
+func (b *SignedBeaconBlock) SetExecutionExitRequests(r []*qrysmpb.ExecutionExitRequest) {
+	b.block.body.executionExitRequests = r
+}
+
 // SetSyncAggregate sets the sync aggregate in the block.
 // This function is not thread safe, it is only used during block creation.
 func (b *SignedBeaconBlock) SetSyncAggregate(s *qrysmpb.SyncAggregate) error {

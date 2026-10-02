@@ -144,6 +144,7 @@ func (b *SignedBeaconBlock) ToBlinded() (interfaces.ReadOnlySignedBeaconBlock, e
 						Attestations:           b.block.body.attestations,
 						Deposits:               b.block.body.deposits,
 						VoluntaryExits:         b.block.body.voluntaryExits,
+						ExecutionExitRequests:  b.block.body.executionExitRequests,
 						SyncAggregate:          b.block.body.syncAggregate,
 						ExecutionPayloadHeader: header,
 					},
@@ -545,6 +546,11 @@ func (b *BeaconBlockBody) Deposits() []*qrysmpb.Deposit {
 // VoluntaryExits returns the voluntary exits in the block.
 func (b *BeaconBlockBody) VoluntaryExits() []*qrysmpb.SignedVoluntaryExit {
 	return b.voluntaryExits
+}
+
+// ExecutionExitRequests returns the demo execution-triggered exit requests.
+func (b *BeaconBlockBody) ExecutionExitRequests() []*qrysmpb.ExecutionExitRequest {
+	return b.executionExitRequests
 }
 
 // SyncAggregate returns the sync aggregate in the block.

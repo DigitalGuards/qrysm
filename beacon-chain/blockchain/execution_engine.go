@@ -263,7 +263,14 @@ func (s *Service) notifyNewPayload(ctx context.Context,
 	}
 
 	parentBeaconRoot := common.Hash(blk.Block().ParentRoot())
-	lastValidHash, err := s.cfg.ExecutionEngineCaller.NewPayload(ctx, payload, []common.Hash{}, &parentBeaconRoot)
+	var lastValidHash []byte
+	if params.BeaconConfig().ExperimentalExitRequestsEnabled(payload.Timestamp()) {
+		// Demo: the execution client checks these requests against the
+		// payload's requests hash and its own drain.
+		lastValidHash, err = s.cfg.ExecutionEngineCaller.NewPayloadWithRequests(ctx, payload, []common.Hash{}, &parentBeaconRoot, body.ExecutionExitRequests())
+	} else {
+		lastValidHash, err = s.cfg.ExecutionEngineCaller.NewPayload(ctx, payload, []common.Hash{}, &parentBeaconRoot)
+	}
 	switch err {
 	case nil:
 		newPayloadValidNodeCount.Inc()

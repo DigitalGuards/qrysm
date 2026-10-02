@@ -75,7 +75,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		blk, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockZond())
 		require.NoError(t, err)
 		b := blk.Block()
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		vs.HeadFetcher = chain
 		b := blk.Block()
 
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		vs.HeadFetcher = chain
 
 		b := blk.Block()
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		vs.ExecutionEngineCaller = &exectesting.EngineClient{PayloadIDBytes: id, ExecutionPayloadZond: &v1.ExecutionPayloadZond{BlockNumber: 3}, BlockValue: 2}
 		b := blk.Block()
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
@@ -237,7 +237,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		vs.ExecutionEngineCaller = &exectesting.EngineClient{PayloadIDBytes: id, ExecutionPayloadZond: &v1.ExecutionPayloadZond{BlockNumber: 3}, BlockValue: 1}
 		b := blk.Block()
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
@@ -258,7 +258,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		}
 		vs.ExecutionEngineCaller = &exectesting.EngineClient{PayloadIDBytes: id, ExecutionPayloadZond: &v1.ExecutionPayloadZond{BlockNumber: 4}, BlockValue: 0}
 		b := blk.Block()
-		localPayload, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
+		localPayload, _, _, err := vs.getLocalPayload(ctx, b, zondTransitionState)
 		require.NoError(t, err)
 		builderPayload, err := vs.getBuilderPayload(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.ErrorIs(t, consensus_types.ErrNilObjectWrapped, err) // Builder returns fault. Use local block

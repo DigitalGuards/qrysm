@@ -79,6 +79,12 @@ type engineMock struct {
 func (m *engineMock) GetPayload(context.Context, [8]byte, uint64) (interfaces.ExecutionData, bool, error) {
 	return nil, false, nil
 }
+func (m *engineMock) GetPayloadWithRequests(context.Context, [8]byte, uint64) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error) {
+	return nil, false, nil, nil
+}
+func (m *engineMock) NewPayloadWithRequests(ctx context.Context, payload interfaces.ExecutionData, hashes []common.Hash, root *common.Hash, _ []*qrysmpb.ExecutionExitRequest) ([]byte, error) {
+	return m.NewPayload(ctx, payload, hashes, root)
+}
 func (m *engineMock) GetPayloadV2(context.Context, [8]byte) (*pb.ExecutionPayloadZond, error) {
 	return nil, nil
 }

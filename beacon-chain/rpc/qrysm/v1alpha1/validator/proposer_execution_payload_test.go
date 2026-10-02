@@ -133,7 +133,7 @@ func TestServer_getExecutionPayload(t *testing.T) {
 			b, err := blocks.NewSignedBeaconBlock(blk)
 			require.NoError(t, err)
 			var gotOverride bool
-			_, gotOverride, err = vs.getLocalPayload(context.Background(), b.Block(), tt.st)
+			_, gotOverride, _, err = vs.getLocalPayload(context.Background(), b.Block(), tt.st)
 			if tt.errString != "" {
 				require.ErrorContains(t, tt.errString, err)
 			} else {
@@ -173,7 +173,7 @@ func TestServer_getExecutionPayloadContextTimeout(t *testing.T) {
 	blk.Block.ParentRoot = bytesutil.PadTo([]byte{'a'}, 32)
 	b, err := blocks.NewSignedBeaconBlock(blk)
 	require.NoError(t, err)
-	_, _, err = vs.getLocalPayload(context.Background(), b.Block(), nonTransitionSt)
+	_, _, _, err = vs.getLocalPayload(context.Background(), b.Block(), nonTransitionSt)
 	require.NoError(t, err)
 }
 
@@ -226,7 +226,7 @@ func TestServer_getExecutionPayload_UnexpectedFeeRecipient(t *testing.T) {
 	blk.Block.ParentRoot = bytesutil.PadTo([]byte{}, 32)
 	b, err := blocks.NewSignedBeaconBlock(blk)
 	require.NoError(t, err)
-	gotPayload, _, err := vs.getLocalPayload(context.Background(), b.Block(), transitionSt)
+	gotPayload, _, _, err := vs.getLocalPayload(context.Background(), b.Block(), transitionSt)
 	require.NoError(t, err)
 	require.NotNil(t, gotPayload)
 
@@ -238,7 +238,7 @@ func TestServer_getExecutionPayload_UnexpectedFeeRecipient(t *testing.T) {
 	payload.FeeRecipient = evilRecipientAddress[:]
 	vs.ProposerSlotIndexCache = cache.NewProposerPayloadIDsCache()
 
-	gotPayload, _, err = vs.getLocalPayload(context.Background(), b.Block(), transitionSt)
+	gotPayload, _, _, err = vs.getLocalPayload(context.Background(), b.Block(), transitionSt)
 	require.NoError(t, err)
 	require.NotNil(t, gotPayload)
 

@@ -107,6 +107,14 @@ message VoluntaryExit {
 }
 
 // The signed version of voluntary exit.
+// Demo only: a full exit requested by a validator's withdrawal recipient
+// through the execution layer queue. The SSZ layout equals the EL record.
+message ExecutionExitRequest {
+    bytes source_address = 1 [(theqrl.qrl.ext.ssz_size) = "64"];
+    uint64 validator_index = 2 [(theqrl.qrl.ext.cast_type) = "github.com/theQRL/qrysm/consensus-types/primitives.ValidatorIndex"];
+    bytes validator_pubkey_root = 3 [(theqrl.qrl.ext.ssz_size) = "32"];
+}
+
 message SignedVoluntaryExit {
     // The unsigned voluntary exit itself.
     VoluntaryExit exit = 1;
@@ -235,6 +243,10 @@ message BeaconBlockBodyZond {
 
     // Execution payload from the execution chain.
     theqrl.engine.v1.ExecutionPayloadZond execution_payload = 10;
+
+    // Demo only: execution-triggered full exits drained by the EL, committed
+    // through the payload's requests hash (EIP-7002 and EIP-7685 style).
+    repeated ExecutionExitRequest execution_exit_requests = 11 [(theqrl.qrl.ext.ssz_max) = "2"];
 }
 
 message SignedBlindedBeaconBlockZond {
@@ -293,6 +305,9 @@ message BlindedBeaconBlockBodyZond {
 
     // Execution payload header from the execution chain.
     theqrl.engine.v1.ExecutionPayloadHeaderZond execution_payload_header = 10;
+
+    // Demo only: see BeaconBlockBodyZond.execution_exit_requests.
+    repeated ExecutionExitRequest execution_exit_requests = 11 [(theqrl.qrl.ext.ssz_max) = "2"];
 }
 
 message ValidatorRegistrationV1 {

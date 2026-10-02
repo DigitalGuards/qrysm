@@ -130,6 +130,7 @@ func (b *BeaconBlockBody) Proto() (proto.Message, error) {
 				Attestations:           b.attestations,
 				Deposits:               b.deposits,
 				VoluntaryExits:         b.voluntaryExits,
+				ExecutionExitRequests:  b.executionExitRequests,
 				SyncAggregate:          b.syncAggregate,
 				ExecutionPayloadHeader: ph,
 			}, nil
@@ -143,16 +144,17 @@ func (b *BeaconBlockBody) Proto() (proto.Message, error) {
 			}
 		}
 		return &qrysmpb.BeaconBlockBodyZond{
-			RandaoReveal:      b.randaoReveal[:],
-			ExecutionData:     b.executionData,
-			Graffiti:          b.graffiti[:],
-			ProposerSlashings: b.proposerSlashings,
-			AttesterSlashings: b.attesterSlashings,
-			Attestations:      b.attestations,
-			Deposits:          b.deposits,
-			VoluntaryExits:    b.voluntaryExits,
-			SyncAggregate:     b.syncAggregate,
-			ExecutionPayload:  p,
+			RandaoReveal:          b.randaoReveal[:],
+			ExecutionData:         b.executionData,
+			Graffiti:              b.graffiti[:],
+			ProposerSlashings:     b.proposerSlashings,
+			AttesterSlashings:     b.attesterSlashings,
+			Attestations:          b.attestations,
+			Deposits:              b.deposits,
+			VoluntaryExits:        b.voluntaryExits,
+			ExecutionExitRequests: b.executionExitRequests,
+			SyncAggregate:         b.syncAggregate,
+			ExecutionPayload:      p,
 		}, nil
 	default:
 		return nil, errors.New("unsupported beacon block body version")
@@ -244,18 +246,19 @@ func initBlockBodyFromProtoZond(pb *qrysmpb.BeaconBlockBodyZond) (*BeaconBlockBo
 		return nil, err
 	}
 	b := &BeaconBlockBody{
-		version:           version.Zond,
-		isBlinded:         false,
-		randaoReveal:      bytesutil.ToBytes32(pb.RandaoReveal),
-		executionData:     pb.ExecutionData,
-		graffiti:          bytesutil.ToBytes32(pb.Graffiti),
-		proposerSlashings: pb.ProposerSlashings,
-		attesterSlashings: pb.AttesterSlashings,
-		attestations:      pb.Attestations,
-		deposits:          pb.Deposits,
-		voluntaryExits:    pb.VoluntaryExits,
-		syncAggregate:     pb.SyncAggregate,
-		executionPayload:  p,
+		version:               version.Zond,
+		isBlinded:             false,
+		randaoReveal:          bytesutil.ToBytes32(pb.RandaoReveal),
+		executionData:         pb.ExecutionData,
+		graffiti:              bytesutil.ToBytes32(pb.Graffiti),
+		proposerSlashings:     pb.ProposerSlashings,
+		attesterSlashings:     pb.AttesterSlashings,
+		attestations:          pb.Attestations,
+		deposits:              pb.Deposits,
+		voluntaryExits:        pb.VoluntaryExits,
+		executionExitRequests: pb.ExecutionExitRequests,
+		syncAggregate:         pb.SyncAggregate,
+		executionPayload:      p,
 	}
 	return b, nil
 }
@@ -281,6 +284,7 @@ func initBlindedBlockBodyFromProtoZond(pb *qrysmpb.BlindedBeaconBlockBodyZond) (
 		attestations:           pb.Attestations,
 		deposits:               pb.Deposits,
 		voluntaryExits:         pb.VoluntaryExits,
+		executionExitRequests:  pb.ExecutionExitRequests,
 		syncAggregate:          pb.SyncAggregate,
 		executionPayloadHeader: ph,
 	}

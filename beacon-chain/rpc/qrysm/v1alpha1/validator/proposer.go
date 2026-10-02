@@ -247,7 +247,7 @@ func (vs *Server) BuildBlockParallel(ctx context.Context, sBlk interfaces.Signed
 		vs.setSyncAggregate(ctx, sBlk, consensusHead)
 	})
 
-	localPayload, overrideBuilder, err := vs.getLocalPayload(ctx, sBlk.Block(), head)
+	localPayload, overrideBuilder, exitRequests, err := vs.getLocalPayload(ctx, sBlk.Block(), head)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Could not get local payload: %v", err)
 	}
@@ -270,6 +270,11 @@ func (vs *Server) BuildBlockParallel(ctx context.Context, sBlk interfaces.Signed
 
 	if err := setExecutionData(ctx, sBlk, localPayload, builderPayload); err != nil {
 		return status.Errorf(codes.Internal, "Could not set execution data: %v", err)
+	}
+	// Demo: the block carries the exit requests drained into the local
+	// payload. Root-bound proposals always use the local payload.
+	if !sBlk.IsBlinded() {
+		sBlk.SetExecutionExitRequests(exitRequests)
 	}
 
 	wg.Wait() // Wait until block is built via consensus and execution fields.

@@ -45,6 +45,7 @@ type BeaconBlockBody struct {
 	attestations           []*qrysmpb.Attestation
 	deposits               []*qrysmpb.Deposit
 	voluntaryExits         []*qrysmpb.SignedVoluntaryExit
+	executionExitRequests  []*qrysmpb.ExecutionExitRequest
 	syncAggregate          *qrysmpb.SyncAggregate
 	executionPayload       interfaces.ExecutionData
 	executionPayloadHeader interfaces.ExecutionData

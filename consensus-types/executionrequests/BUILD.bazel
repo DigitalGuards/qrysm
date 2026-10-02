@@ -14,6 +14,9 @@ go_library(
 
 go_test(
     name = "executionrequests_test",
-    srcs = ["exits_test.go"],
+    srcs = [
+        "exits_test.go",
+        "groups_test.go",
+    ],
     embed = [":executionrequests"],
 )

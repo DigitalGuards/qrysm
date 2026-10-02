@@ -44,6 +44,11 @@ func checkBodyHashable(body *qrysmpb.BeaconBlockBodyZond) error {
 		body.AttesterSlashings, body.Attestations, body.Deposits, body.VoluntaryExits); err != nil {
 		return err
 	}
+	for i, r := range body.ExecutionExitRequests {
+		if r == nil {
+			return errors.Wrapf(errNotHashable, "execution exit request %d", i)
+		}
+	}
 	if body.ExecutionPayload == nil {
 		return errors.Wrap(errNotHashable, "execution payload")
 	}
@@ -62,6 +67,11 @@ func checkBlindedBodyHashable(body *qrysmpb.BlindedBeaconBlockBodyZond) error {
 	if err := checkOperationsHashable(body.ExecutionData, body.SyncAggregate, body.ProposerSlashings,
 		body.AttesterSlashings, body.Attestations, body.Deposits, body.VoluntaryExits); err != nil {
 		return err
+	}
+	for i, r := range body.ExecutionExitRequests {
+		if r == nil {
+			return errors.Wrapf(errNotHashable, "execution exit request %d", i)
+		}
 	}
 	if body.ExecutionPayloadHeader == nil {
 		return errors.Wrap(errNotHashable, "execution payload header")

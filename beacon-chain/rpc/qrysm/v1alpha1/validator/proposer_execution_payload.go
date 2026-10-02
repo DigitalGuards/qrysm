@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,7 +40,9 @@ var (
 )
 
 // This returns the local execution payload of a given slot. The function has full awareness of pre and post merge.
-func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBeaconBlock, st state.BeaconState) (interfaces.ExecutionData, bool, error) {
+// The returned requests are the demo exit requests the execution client
+// drained into the payload; the block must carry exactly these.
+func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBeaconBlock, st state.BeaconState) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error) {
 	ctx, span := trace.StartSpan(ctx, "ProposerServer.getLocalPayload")
 	defer span.End()
 
@@ -65,14 +68,14 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 				"Please refer to our documentation for instructions")
 		}
 	default:
-		return nil, false, errors.Wrap(err, "could not get fee recipient in db")
+		return nil, false, nil, errors.Wrap(err, "could not get fee recipient in db")
 	}
 
 	// The payload timestamp selects both the attributes and the getPayload
 	// method, so derive it once from the beacon state's genesis time.
 	t, err := slots.ToTime(st.GenesisTime(), slot)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	timestamp := uint64(t.Unix())
 
@@ -80,26 +83,26 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 		var pid [8]byte
 		copy(pid[:], payloadId[:])
 		payloadIDCacheHit.Inc()
-		payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, pid, timestamp)
+		payload, overrideBuilder, requests, err := vs.ExecutionEngineCaller.GetPayloadWithRequests(ctx, pid, timestamp)
 		switch {
 		case err == nil:
 			warnIfFeeRecipientDiffers(payload, feeRecipient)
-			return payload, overrideBuilder, nil
+			return payload, overrideBuilder, requests, nil
 		case errors.Is(err, context.DeadlineExceeded):
 		default:
-			return nil, false, errors.Wrap(err, "could not get cached payload from execution client")
+			return nil, false, nil, errors.Wrap(err, "could not get cached payload from execution client")
 		}
 	}
 
 	parentHash, err := vs.getParentBlockHash(ctx, st, slot)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	payloadIDCacheMiss.Inc()
 
 	random, err := helpers.RandaoMix(st, time.CurrentEpoch(st))
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 
 	finalizedBlockHash := vs.FinalizationFetcher.FinalizedBlockHash()
@@ -116,7 +119,7 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 	case version.Zond:
 		withdrawals, err := st.ExpectedWithdrawals()
 		if err != nil {
-			return nil, false, err
+			return nil, false, nil, err
 		}
 		attr, err = payloadattribute.New(&enginev1.PayloadAttributesV2{
 			Timestamp:             timestamp,
@@ -125,30 +128,30 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 			Withdrawals:           withdrawals,
 		})
 		if err != nil {
-			return nil, false, err
+			return nil, false, nil, err
 		}
 	default:
-		return nil, false, errors.New("unknown beacon state version")
+		return nil, false, nil, errors.New("unknown beacon state version")
 	}
 	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(timestamp) {
 		attr, err = payloadattribute.WithParentBeaconBlockRoot(attr, headRoot[:])
 		if err != nil {
-			return nil, false, err
+			return nil, false, nil, err
 		}
 	}
 	payloadID, err := vs.forkchoiceUpdateForPayload(ctx, f, attr)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "could not prepare payload")
+		return nil, false, nil, errors.Wrap(err, "could not prepare payload")
 	}
 	if payloadID == nil {
-		return nil, false, fmt.Errorf("nil payload with block hash: %#x", parentHash)
+		return nil, false, nil, fmt.Errorf("nil payload with block hash: %#x", parentHash)
 	}
-	payload, overrideBuilder, err := vs.ExecutionEngineCaller.GetPayload(ctx, *payloadID, timestamp)
+	payload, overrideBuilder, requests, err := vs.ExecutionEngineCaller.GetPayloadWithRequests(ctx, *payloadID, timestamp)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	warnIfFeeRecipientDiffers(payload, feeRecipient)
-	return payload, overrideBuilder, nil
+	return payload, overrideBuilder, requests, nil
 }
 
 // forkchoiceUpdateForPayload can move execution to a proposal's parent after a

@@ -2,6 +2,7 @@ package testing
 
 import (
 	"context"
+	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 
 	"github.com/pkg/errors"
 	"github.com/theQRL/go-qrl/common"
@@ -15,6 +16,7 @@ import (
 
 // EngineClient --
 type EngineClient struct {
+	ExecutionExitRequests       []*qrysmpb.ExecutionExitRequest
 	NewPayloadResp              []byte
 	PayloadIDBytes              *pb.PayloadIDBytes
 	ForkChoiceUpdatedResp       []byte
@@ -49,6 +51,17 @@ func (e *EngineClient) ForkchoiceUpdated(
 		return e.PayloadIDBytes, e.ForkChoiceUpdatedResp, nil
 	}
 	return e.PayloadIDBytes, e.ForkChoiceUpdatedResp, e.ErrForkchoiceUpdated
+}
+
+// NewPayloadWithRequests --
+func (e *EngineClient) NewPayloadWithRequests(ctx context.Context, payload interfaces.ExecutionData, versionedHashes []common.Hash, parentBlockRoot *common.Hash, _ []*qrysmpb.ExecutionExitRequest) ([]byte, error) {
+	return e.NewPayload(ctx, payload, versionedHashes, parentBlockRoot)
+}
+
+// GetPayloadWithRequests --
+func (e *EngineClient) GetPayloadWithRequests(ctx context.Context, id [8]byte, timestamp uint64) (interfaces.ExecutionData, bool, []*qrysmpb.ExecutionExitRequest, error) {
+	payload, overrideBuilder, err := e.GetPayload(ctx, id, timestamp)
+	return payload, overrideBuilder, e.ExecutionExitRequests, err
 }
 
 // GetPayload --

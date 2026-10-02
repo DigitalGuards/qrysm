@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/theQRL/qrysm/consensus-types/executionrequests"
 
 	"github.com/pkg/errors"
 	"github.com/theQRL/qrysm/beacon-chain/cache"
@@ -302,6 +303,10 @@ func VerifyOperationLengths(_ context.Context, state state.BeaconState, b interf
 			len(body.VoluntaryExits()),
 			params.BeaconConfig().MaxVoluntaryExits,
 		)
+	}
+	if len(body.ExecutionExitRequests()) > executionrequests.MaxPerBlock {
+		return nil, fmt.Errorf("number of execution exit requests (%d) exceeds allowed threshold of %d",
+			len(body.ExecutionExitRequests()), executionrequests.MaxPerBlock)
 	}
 	executionData := state.ExecutionData()
 	if executionData == nil {

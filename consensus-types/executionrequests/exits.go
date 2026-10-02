@@ -12,6 +12,7 @@ import (
 	ssz "github.com/prysmaticlabs/fastssz"
 	fieldparams "github.com/theQRL/qrysm/config/fieldparams"
 	"github.com/theQRL/qrysm/consensus-types/primitives"
+	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 )
 
 // ExitRecordSize is the candidate fixed SSZ record width. The outer request
@@ -71,4 +72,67 @@ func PublicKeyRoot(publicKey []byte) ([fieldparams.RootLength]byte, error) {
 	hasher := ssz.NewHasher()
 	hasher.PutBytes(publicKey)
 	return hasher.HashRoot()
+}
+
+// MaxPerBlock bounds execution-triggered exits per block. It must equal the
+// execution client's stakingrequests.MaxPerBlock and the body's SSZ maximum.
+const MaxPerBlock = 2
+
+// ExitRequestType is the EIP-7685 request type of an exit group, matching the
+// execution client's stakingrequests.Type.
+const ExitRequestType byte = 1
+
+// Groups encodes body requests as EIP-7685 request groups for the Engine API:
+// no group when empty, otherwise one group of type ExitRequestType followed by
+// the SSZ records, which equal the execution client's drain output.
+func Groups(requests []*qrysmpb.ExecutionExitRequest) ([][]byte, error) {
+	if len(requests) == 0 {
+		return [][]byte{}, nil
+	}
+	group := []byte{ExitRequestType}
+	for i, request := range requests {
+		if request == nil {
+			return nil, fmt.Errorf("nil execution exit request %d", i)
+		}
+		record, err := request.MarshalSSZ()
+		if err != nil {
+			return nil, err
+		}
+		group = append(group, record...)
+	}
+	return [][]byte{group}, nil
+}
+
+// FromGroups decodes Engine API request groups into body requests. It accepts
+// only the exit group and rejects malformed or oversized input.
+func FromGroups(groups [][]byte) ([]*qrysmpb.ExecutionExitRequest, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	if len(groups) != 1 || len(groups[0]) < 2 || groups[0][0] != ExitRequestType {
+		return nil, fmt.Errorf("unexpected execution request groups")
+	}
+	exits, err := DecodeExits(groups[0][1:], MaxPerBlock)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*qrysmpb.ExecutionExitRequest, len(exits))
+	for i, exit := range exits {
+		out[i] = &qrysmpb.ExecutionExitRequest{
+			SourceAddress:       append([]byte(nil), exit.SourceAddress[:]...),
+			ValidatorIndex:      exit.ValidatorIndex,
+			ValidatorPubkeyRoot: append([]byte(nil), exit.ValidatorPubkeyRoot[:]...),
+		}
+	}
+	return out, nil
+}
+
+// Records returns the concatenated SSZ records of body requests, the input of
+// blocks.ProcessExecutionExitRequests.
+func Records(requests []*qrysmpb.ExecutionExitRequest) ([]byte, error) {
+	groups, err := Groups(requests)
+	if err != nil || len(groups) == 0 {
+		return nil, err
+	}
+	return groups[0][1:], nil
 }

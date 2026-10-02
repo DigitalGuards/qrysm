@@ -140,7 +140,7 @@ func TestServer_PayloadForkchoiceAcknowledgement(t *testing.T) {
 			if tc.cached {
 				vs.ProposerSlotIndexCache.SetProposerAndPayloadIDs(blk.Block().Slot(), blk.Block().ProposerIndex(), [8]byte{1}, blk.Block().ParentRoot())
 			}
-			_, _, err = vs.getLocalPayload(ctx, blk.Block(), st)
+			_, _, _, err = vs.getLocalPayload(ctx, blk.Block(), st)
 			if tc.rpcErr != nil {
 				require.ErrorIs(t, err, tc.rpcErr)
 			} else {
