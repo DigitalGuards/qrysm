@@ -23,8 +23,8 @@ func (s *Store) DepositContractAddress(ctx context.Context) ([]byte, error) {
 			copy(addr, v)
 		}
 		return nil
-	}); err != nil { // This view never returns an error, but we'll handle anyway for sanity.
-		panic(err) // lint:nopanic
+	}); err != nil {
+		return nil, err
 	}
 	return addr, nil
 }

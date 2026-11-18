@@ -81,18 +81,10 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		},
 	})
 
-	if features.Get().EnableSlasher {
-		// Feed the block header to slasher if enabled. This action
-		// is done in the background to avoid adding more load to this critical code path.
-		go func() {
-			blockHeader, err := interfaces.SignedBeaconBlockHeaderFromBlockInterface(blk)
-			if err != nil {
-				log.WithError(err).WithField("blockSlot", blk.Block().Slot()).Warn("Could not extract block header")
-				return
-			}
-			s.cfg.slasherBlockHeadersFeed.Send(blockHeader)
-		}()
-	}
+	// Feed the block header to slasher if enabled. This happens before the
+	// seen check on purpose: the slasher must see a second block for a
+	// (slot, proposer) that gossip is about to ignore.
+	s.feedBlockHeaderToSlasher(blk)
 
 	// Verify the block is the first block received for the proposer for the slot.
 	if s.hasSeenBlockIndexSlot(blk.Block().Slot(), blk.Block().ProposerIndex()) {
@@ -387,6 +379,23 @@ func (s *Service) verifyPendingBlockSignature(ctx context.Context, pid peer.ID, 
 }
 
 // Returns true if the block is not the first block proposed for the proposer for the slot.
+// feedBlockHeaderToSlasher hands the block's signed header to the slasher when
+// it is enabled. This is done in the background to avoid adding load to the
+// block processing paths.
+func (s *Service) feedBlockHeaderToSlasher(blk interfaces.ReadOnlySignedBeaconBlock) {
+	if !features.Get().EnableSlasher || s.cfg.slasherBlockHeadersFeed == nil {
+		return
+	}
+	go func() {
+		blockHeader, err := interfaces.SignedBeaconBlockHeaderFromBlockInterface(blk)
+		if err != nil {
+			log.WithError(err).WithField("blockSlot", blk.Block().Slot()).Warn("Could not extract block header")
+			return
+		}
+		s.cfg.slasherBlockHeadersFeed.Send(blockHeader)
+	}()
+}
+
 func (s *Service) hasSeenBlockIndexSlot(slot primitives.Slot, proposerIdx primitives.ValidatorIndex) bool {
 	s.seenBlockLock.RLock()
 	defer s.seenBlockLock.RUnlock()

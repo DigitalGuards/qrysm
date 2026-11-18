@@ -408,16 +408,13 @@ func TestConfigureNetwork(t *testing.T) {
 	set := flag.NewFlagSet("test", 0)
 	bootstrapNodes := cli.StringSlice{}
 	set.Var(&bootstrapNodes, cmd.BootstrapNode.Name, "")
-	set.Int(flags.ContractDeploymentBlock.Name, 0, "")
 	require.NoError(t, set.Set(cmd.BootstrapNode.Name, "node1"))
 	require.NoError(t, set.Set(cmd.BootstrapNode.Name, "node2"))
-	require.NoError(t, set.Set(flags.ContractDeploymentBlock.Name, strconv.Itoa(100)))
 	cliCtx := cli.NewContext(&app, set, nil)
 
 	configureNetwork(cliCtx)
 
 	assert.DeepEqual(t, []string{"node1", "node2"}, params.BeaconNetworkConfig().BootstrapNodes)
-	assert.Equal(t, uint64(100), params.BeaconNetworkConfig().ContractDeploymentBlock)
 }
 
 func TestConfigureNetwork_ConfigFile(t *testing.T) {
@@ -513,5 +510,19 @@ func TestConfigureInterop(t *testing.T) {
 			require.NoError(t, configureInteropConfig(tt.flagSetter()))
 			assert.DeepEqual(t, tt.configName, params.BeaconConfig().ConfigName)
 		})
+	}
+}
+
+func TestConfigureSlotsPerArchivedPoint_RejectsNonPositive(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	for _, value := range []int{0, -1} {
+		app := cli.App{}
+		set := flag.NewFlagSet("test", 0)
+		set.Int(flags.SlotsPerArchivedPoint.Name, 0, "")
+		require.NoError(t, set.Set(flags.SlotsPerArchivedPoint.Name, strconv.Itoa(value)))
+		cliCtx := cli.NewContext(&app, set, nil)
+
+		require.ErrorContains(t, "must be a positive number of slots", configureSlotsPerArchivedPoint(cliCtx))
+		assert.Equal(t, params.MainnetConfig().SlotsPerArchivedPoint, params.BeaconConfig().SlotsPerArchivedPoint, "the configured interval must be untouched")
 	}
 }

@@ -54,6 +54,16 @@ func (c *CanonicalHistory) BlockRootForSlot(ctx context.Context, target primitiv
 	if currentSlot := c.cs.CurrentSlot(); target > currentSlot {
 		return [32]byte{}, errors.Wrap(ErrFutureSlotRequested, fmt.Sprintf("requested=%d, current=%d", target, currentSlot))
 	}
+	covered, err := c.slotCovered(ctx, target)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	if !covered {
+		// Without this check the search below finds no canonical block, falls
+		// through to genesis, and the replay fabricates a state from the genesis
+		// state and empty slots.
+		return [32]byte{}, errors.Wrapf(ErrNoDataForSlot, "slot %d not in db due to checkpoint sync", target)
+	}
 
 	slotAbove := target + 1
 	// don't bother searching for candidate roots when we know the target slot is genesis
@@ -89,6 +99,53 @@ func (c *CanonicalHistory) BlockRootForSlot(ctx context.Context, target primitiv
 	return c.h.GenesisBlockRoot(ctx)
 }
 
+// slotCovered reports whether the node holds canonical history for the slot. A
+// node started from a checkpoint has no blocks between the backfill position
+// and the origin block, so no state can be replayed for a slot in that gap.
+// This mirrors backfill.Status.SlotCovered using the persisted roots. Note for a
+// future backfill implementation: blocks it stores must also be canonical for
+// the CanonicalChecker (the finalized index) before slots at or below the
+// backfill position may be served from them.
+func (c *CanonicalHistory) slotCovered(ctx context.Context, slot primitives.Slot) (bool, error) {
+	originRoot, err := c.h.OriginCheckpointBlockRoot(ctx)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFoundOriginBlockRoot) {
+			return true, nil // synced from genesis
+		}
+		return false, errors.Wrap(err, "could not read the origin checkpoint root")
+	}
+	originSlot, err := c.slotOfBlock(ctx, originRoot)
+	if err != nil {
+		return false, errors.Wrap(err, "could not read the origin checkpoint block")
+	}
+	if slot >= originSlot {
+		return true, nil
+	}
+	backfillRoot, err := c.h.BackfillBlockRoot(ctx)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFoundBackfillBlockRoot) {
+			return false, nil // nothing backfilled yet
+		}
+		return false, errors.Wrap(err, "could not read the backfill block root")
+	}
+	backfillSlot, err := c.slotOfBlock(ctx, backfillRoot)
+	if err != nil {
+		return false, errors.Wrap(err, "could not read the backfill block")
+	}
+	return slot <= backfillSlot, nil
+}
+
+func (c *CanonicalHistory) slotOfBlock(ctx context.Context, root [32]byte) (primitives.Slot, error) {
+	b, err := c.h.Block(ctx, root)
+	if err != nil {
+		return 0, err
+	}
+	if err := blocks.BeaconBlockIsNil(b); err != nil {
+		return 0, errors.Wrapf(db.ErrNotFound, "block %#x", root)
+	}
+	return b.Block().Slot(), nil
+}
+
 // bestForSlot encapsulates several messy realities of the underlying db code, looping through multiple blocks,
 // performing null/validity checks, and using CanonicalChecker to only pick canonical blocks.
 func (c *CanonicalHistory) bestForSlot(ctx context.Context, roots [][32]byte) ([32]byte, error) {
@@ -115,7 +172,7 @@ func (c *CanonicalHistory) chainForSlot(ctx context.Context, target primitives.S
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "no canonical block root found below slot=%d", target)
 	}
-	s, descendants, err := c.ancestorChain(ctx, r)
+	s, descendants, err := c.ancestorChain(ctx, r, target)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to query for ancestor and descendant block roots")
 	}
@@ -140,8 +197,10 @@ func (c *CanonicalHistory) getState(ctx context.Context, blockRoot [32]byte) (st
 // If it finds a saved state that the tail block was descended from, it returns this state and
 // all roots in the lineage, including the tail block. Roots are returned in ascending order.
 // Note that this function assumes that the tail is a canonical block, and therefore assumes that
-// all ancestors are also canonical.
-func (c *CanonicalHistory) ancestorChain(ctx context.Context, tailRoot [32]byte) (state.BeaconState, [][32]byte, error) {
+// all ancestors are also canonical. A saved state at a later slot than its block (the block's
+// post-state advanced through empty slots, which is how a checkpoint state may have been
+// provided) is used as long as it does not lie beyond the replay target.
+func (c *CanonicalHistory) ancestorChain(ctx context.Context, tailRoot [32]byte, target primitives.Slot) (state.BeaconState, [][32]byte, error) {
 	ctx, span := trace.StartSpan(ctx, "canonicalChainer.ancestorChain")
 	defer span.End()
 	chain := make([][32]byte, 0)
@@ -160,9 +219,9 @@ func (c *CanonicalHistory) ancestorChain(ctx context.Context, tailRoot [32]byte)
 		st, err := c.getState(ctx, tailRoot)
 		// err == nil, we've got a real state - the job is done!
 		// Note: in cases where there are skipped slots we could find a state that is a descendant
-		// of the block we are searching for. We don't want to return a future block, so in this case
-		// we keep working backwards.
-		if err == nil && st.Slot() == b.Slot() {
+		// of the block we are searching for. Such a state is only usable when it does not lie
+		// beyond the replay target; otherwise we keep working backwards.
+		if err == nil && st.Slot() >= b.Slot() && st.Slot() <= target {
 			// we found the state by the root of the head, meaning it has already been applied.
 			// we only want to return the roots descended from it.
 			reverseBlockRoots(chain)

@@ -75,10 +75,15 @@ func ByteArrayRootWithLimit(roots [][]byte, limit uint64) ([32]byte, error) {
 
 // SlashingsRoot computes the HashTreeRoot Merkleization of
 // a list of uint64 slashing values according to the Ethereum
-// Simple Serialize specification.
+// Simple Serialize specification. The values are hashed as a vector of
+// their own length, which must not exceed the compiled slashings vector
+// length; longer inputs are rejected rather than silently truncated.
 func SlashingsRoot(slashings []uint64) ([32]byte, error) {
-	slashingMarshaling := make([][]byte, fieldparams.SlashingsLength)
-	for i := 0; i < len(slashings) && i < len(slashingMarshaling); i++ {
+	if len(slashings) > fieldparams.SlashingsLength {
+		return [32]byte{}, errors.Errorf("slashings length %d exceeds vector length %d", len(slashings), fieldparams.SlashingsLength)
+	}
+	slashingMarshaling := make([][]byte, len(slashings))
+	for i := 0; i < len(slashings); i++ {
 		slashBuf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(slashBuf, slashings[i])
 		slashingMarshaling[i] = slashBuf

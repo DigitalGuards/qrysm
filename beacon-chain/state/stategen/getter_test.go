@@ -742,3 +742,25 @@ func TestLastAncestorState_StateRemovedBetweenCheckAndRead(t *testing.T) {
 	assert.Equal(t, primitives.Slot(0), lastState.Slot(), "the walk must fall back to the older ancestor state")
 	require.DeepEqual(t, [][32]byte{r1, r2, r3}, roots)
 }
+
+// The replayer used by the slot-based APIs looks states up through the
+// combined cache. The finalized state held in memory must be part of it, so a
+// replay for a slot after finalization starts at the finalized checkpoint rather
+// than at the previous archived point.
+func TestCombinedCache_ServesFinalizedState(t *testing.T) {
+	beaconDB := testDB.SetupDB(t)
+	service := New(beaconDB, doublylinkedtree.New())
+
+	st, _ := util.DeterministicGenesisStateZond(t, 8)
+	require.NoError(t, st.SetSlot(96))
+	root := [32]byte{'f'}
+	service.SaveFinalizedState(96, root, st)
+
+	cache := service.CombinedCache()
+	got, err := cache.ByBlockRoot(root)
+	require.NoError(t, err)
+	require.Equal(t, st.Slot(), got.Slot())
+
+	_, err = cache.ByBlockRoot([32]byte{'x'})
+	require.ErrorIs(t, err, ErrNotInCache)
+}

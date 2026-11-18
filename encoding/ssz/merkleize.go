@@ -218,6 +218,9 @@ func MerkleizeVector(elements [][32]byte, length uint64) [32]byte {
 	if len(elements) == 0 {
 		return trie.ZeroHashes[depth]
 	}
+	// Odd layers are padded with append below. Cap the slice so the append
+	// can never write into spare capacity of the caller's backing array.
+	elements = elements[:len(elements):len(elements)]
 	for i := range depth {
 		layerLen := len(elements)
 		oddNodeLength := layerLen%2 == 1

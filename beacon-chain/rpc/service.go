@@ -45,7 +45,6 @@ import (
 	nodev1alpha1 "github.com/theQRL/qrysm/beacon-chain/rpc/qrysm/v1alpha1/node"
 	validatorv1alpha1 "github.com/theQRL/qrysm/beacon-chain/rpc/qrysm/v1alpha1/validator"
 	httpserver "github.com/theQRL/qrysm/beacon-chain/rpc/qrysm/validator"
-	slasherservice "github.com/theQRL/qrysm/beacon-chain/slasher"
 	"github.com/theQRL/qrysm/beacon-chain/startup"
 	"github.com/theQRL/qrysm/beacon-chain/state/stategen"
 	chainSync "github.com/theQRL/qrysm/beacon-chain/sync"
@@ -105,7 +104,6 @@ type Config struct {
 	AttestationsPool              attestations.Pool
 	ExitPool                      voluntaryexits.PoolManager
 	SlashingsPool                 slashings.PoolManager
-	SlashingChecker               slasherservice.SlashingChecker
 	SyncCommitteeObjectPool       synccommittee.Pool
 	SyncService                   chainSync.Checker
 	Broadcaster                   p2p.Broadcaster

@@ -396,8 +396,19 @@ func (vs *Server) PrepareBeaconProposer(
 	var feeRecipients []common.Address
 	var validatorIndices []primitives.ValidatorIndex
 
+	// Fee recipients are stored by validator index and never removed, so only
+	// indices of validators in the registry are accepted; otherwise any API
+	// client could grow the database without bound.
+	headState, err := vs.HeadFetcher.HeadStateReadOnly(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Could not get head state: %v", err)
+	}
+	numValidators := uint64(headState.NumValidators())
 	newRecipients := make([]*qrysmpb.PrepareBeaconProposerRequest_FeeRecipientContainer, 0, len(request.Recipients))
 	for _, r := range request.Recipients {
+		if uint64(r.ValidatorIndex) >= numValidators {
+			return nil, status.Errorf(codes.InvalidArgument, "Validator index %d is not in the registry of %d validators", r.ValidatorIndex, numValidators)
+		}
 		f, err := vs.BeaconDB.FeeRecipientByValidatorID(ctx, r.ValidatorIndex)
 		switch {
 		case errors.Is(err, kv.ErrNotFoundFeeRecipient):

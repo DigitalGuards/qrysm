@@ -140,8 +140,9 @@ func (s *State) StateByRootInitialSync(ctx context.Context, blockRoot [32]byte) 
 	// It is a parent root because StateByRootInitialSync is always used to fetch the block's parent state.
 	defer s.hotStateCache.delete(blockRoot)
 
-	if s.hotStateCache.has(blockRoot) {
-		return s.hotStateCache.getWithoutCopy(blockRoot), nil
+	// A single lookup: the entry can be evicted between a has() and a get().
+	if cached := s.hotStateCache.getWithoutCopy(blockRoot); cached != nil {
+		return cached, nil
 	}
 
 	cachedInfo, ok, err := s.epochBoundaryStateCache.getByBlockRoot(blockRoot)
@@ -164,7 +165,9 @@ func (s *State) StateByRootInitialSync(ctx context.Context, blockRoot [32]byte) 
 	if startState == nil || startState.IsNil() {
 		return nil, errUnknownState
 	}
-	if startState.Slot() == summary.Slot {
+	// A state at the target slot with no blocks left to apply is the result; a
+	// state at the target slot with a block left to apply is that block's pre-state.
+	if startState.Slot() == summary.Slot && len(blockRoots) == 0 {
 		return startState, nil
 	}
 
@@ -267,7 +270,9 @@ func (s *State) loadStateByRoot(ctx context.Context, blockRoot [32]byte) (state.
 		return nil, errUnknownBoundaryState
 	}
 
-	if startState.Slot() == targetSlot {
+	// A state at the target slot with no blocks left to apply is the result; a
+	// state at the target slot with a block left to apply is that block's pre-state.
+	if startState.Slot() == targetSlot && len(blockRoots) == 0 {
 		return startState, nil
 	}
 
@@ -330,11 +335,13 @@ func (s *State) latestAncestorAndBlockRootsForSlot(
 		if !s.slotAvailable(ps) {
 			return nil, nil, errors.Wrapf(ErrNoDataForSlot, "slot %d not in db due to checkpoint sync", ps)
 		}
-		// Does the state exist in the hot state cache.
-		if s.hotStateCache.has(parentRoot) {
+		// Does the state exist in the hot state cache. A single lookup: the
+		// entry can be evicted by a concurrent put between a has() and a
+		// get(), which would hand back a nil ancestor state.
+		if cached := s.hotStateCache.get(parentRoot); cached != nil {
 			appendCurrentRoot()
 			reverseBlockRoots(roots)
-			return s.hotStateCache.get(parentRoot), roots, nil
+			return cached, roots, nil
 		}
 
 		// Does the state exist in finalized info cache.
@@ -390,7 +397,25 @@ func (s *State) CombinedCache() *CombinedCache {
 	if s.epochBoundaryStateCache != nil {
 		getters = append(getters, s.epochBoundaryStateCache)
 	}
+	// The finalized state kept in memory lets a replay for a slot after
+	// finalization start at the finalized checkpoint instead of walking back to
+	// the previous archived point, up to SlotsPerArchivedPoint slots earlier.
+	getters = append(getters, finalizedStateGetter{s: s})
 	return &CombinedCache{getters: getters}
+}
+
+// finalizedStateGetter exposes the finalized state held by the state manager
+// as a CachedGetter.
+type finalizedStateGetter struct {
+	s *State
+}
+
+// ByBlockRoot satisfies the CachedGetter interface.
+func (g finalizedStateGetter) ByBlockRoot(r [32]byte) (state.BeaconState, error) {
+	if st := g.s.finalizedStateIfRoot(r); st != nil {
+		return st, nil
+	}
+	return nil, ErrNotInCache
 }
 
 func (s *State) slotAvailable(slot primitives.Slot) bool {

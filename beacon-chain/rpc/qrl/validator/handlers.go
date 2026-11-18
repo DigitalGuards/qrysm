@@ -628,10 +628,23 @@ func (s *Server) PrepareBeaconProposer(w http.ResponseWriter, r *http.Request) {
 	}
 	var feeRecipients []common.Address
 	var validatorIndices []primitives.ValidatorIndex
+	// Fee recipients are stored by validator index and never removed, so only
+	// indices of validators in the registry are accepted; otherwise any API
+	// client could grow the database without bound.
+	headState, err := s.HeadFetcher.HeadStateReadOnly(ctx)
+	if err != nil {
+		http2.HandleError(w, "Could not get head state: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	numValidators := uint64(headState.NumValidators())
 	// filter for found fee recipients
 	for _, r := range jsonFeeRecipients {
 		validatorIndex, valid := shared.ValidateUint(w, "Validator Index", r.ValidatorIndex)
 		if !valid {
+			return
+		}
+		if validatorIndex >= numValidators {
+			http2.HandleError(w, fmt.Sprintf("Validator index %d is not in the registry of %d validators", validatorIndex, numValidators), http.StatusBadRequest)
 			return
 		}
 		feeRecipientBytes, valid := shared.ValidateAddress(w, "Fee Recipient", r.FeeRecipient, fieldparams.FeeRecipientLength)

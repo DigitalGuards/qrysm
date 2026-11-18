@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/theQRL/qrysm/beacon-chain/state"
+	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/primitives"
 	"github.com/theQRL/qrysm/encoding/bytesutil"
 	"go.opencensus.io/trace"
@@ -25,6 +27,12 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 	s.migrationLock.Lock()
 	defer s.migrationLock.Unlock()
 
+	// The interval divides slots below; a zero interval would be a division
+	// by zero in a background goroutine, which has no recovery.
+	if s.slotsPerArchivedPoint == 0 {
+		return errors.New("slots per archived point must be positive")
+	}
+
 	s.finalizedInfo.lock.RLock()
 	oldFSlot := s.finalizedInfo.slot
 	s.finalizedInfo.lock.RUnlock()
@@ -32,6 +40,9 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 	fBlock, err := s.beaconDB.Block(ctx, fRoot)
 	if err != nil {
 		return err
+	}
+	if err := blocks.BeaconBlockIsNil(fBlock); err != nil {
+		return errors.Wrapf(err, "finalized block %#x not found", fRoot)
 	}
 	fSlot := fBlock.Block().Slot()
 	if oldFSlot > fSlot {
@@ -67,15 +78,20 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 			var aRoot [32]byte
 			var aState state.BeaconState
 
-			// When the epoch boundary state is not in cache due to skip slot scenario,
-			// we have to regenerate the state which will represent epoch boundary.
-			// By finding the highest available canonical block below epoch boundary slot,
-			// we generate the state for that block root.
+			// When the epoch boundary state is not in cache (skipped slot, cache
+			// eviction, or a non-canonical entry holding the slot key), regenerate
+			// the state which represents the epoch boundary from the highest
+			// canonical block at or below the boundary slot. The slot itself must be
+			// considered: after a restart the boundary cache is empty, and when the
+			// boundary coincides with the finalized slot the migration resumed from
+			// (the floor below), the finalized block is the block to archive. Looking
+			// only strictly below it trips the floor check and, because the finalized
+			// info is then never advanced, stalls every later migration.
 			if exists {
 				aRoot = cached.root
 				aState = cached.state
 			} else {
-				aRoot, err = s.canonicalRootAtOrBelow(ctx, slot-1, oldFSlot)
+				aRoot, err = s.canonicalRootAtOrBelow(ctx, slot, oldFSlot)
 				if err != nil {
 					return err
 				}
@@ -89,22 +105,29 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 				}
 			}
 
+			// The existence check and the removal from the hot-state list form one
+			// critical section with DisableSaveHotStateToDB, which deletes the
+			// listed states under the same lock. Checked outside it, the state
+			// could be deleted between the check and the removal: the archived
+			// point would be skipped here while its state is gone.
+			s.saveHotStateDB.lock.Lock()
 			if s.beaconDB.HasState(ctx, aRoot) {
 				// If you are migrating a state and its already part of the hot state cache saved to the db,
 				// you can just remove it from the hot state cache as it becomes redundant.
-				s.saveHotStateDB.lock.Lock()
+				// Remove every entry for the root: a leftover one would have the
+				// hot-state cleanup delete the archived state later.
 				roots := s.saveHotStateDB.blockRootsOfSavedStates
-				for i := range roots {
-					if aRoot == roots[i] {
-						s.saveHotStateDB.blockRootsOfSavedStates = append(roots[:i], roots[i+1:]...)
-						// There shouldn't be duplicated roots in `blockRootsOfSavedStates`.
-						// Break here is ok.
-						break
+				kept := roots[:0]
+				for _, r := range roots {
+					if r != aRoot {
+						kept = append(kept, r)
 					}
 				}
+				s.saveHotStateDB.blockRootsOfSavedStates = kept
 				s.saveHotStateDB.lock.Unlock()
 				continue
 			}
+			s.saveHotStateDB.lock.Unlock()
 
 			// aState is only generated when the first HasState check above missed. A
 			// concurrent DeleteStates (e.g. DisableSaveHotStateToDB on the block-import
@@ -129,14 +152,29 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 		}
 	}
 
-	// Update finalized info in memory.
+	// Every archived point below the finalized slot is on disk now. Record the
+	// cursor so a restart resumes here rather than at whatever archived state
+	// happens to be the highest one, which can hide an unfinished range below it.
+	if err := s.beaconDB.SaveStateMigrationCursor(ctx, fSlot); err != nil {
+		return errors.Wrap(err, "could not save the state migration cursor")
+	}
+
+	// Update finalized info in memory. The slot is the migration cursor and
+	// advances whatever the caches hold: left behind, the next migration would
+	// redo the whole range, and an older queued migration (above the stale
+	// cursor) would run and record its lower slot. The finalized root and state
+	// are replaced together, when the state is at hand.
+	var fState state.BeaconState
 	fInfo, ok, err := s.epochBoundaryStateCache.getByBlockRoot(fRoot)
 	if err != nil {
 		return err
 	}
 	if ok {
-		s.SaveFinalizedState(fSlot, fRoot, fInfo.state)
+		fState = fInfo.state
+	} else if cached := s.hotStateCache.getWithoutCopy(fRoot); cached != nil && !cached.IsNil() {
+		fState = cached
 	}
+	s.advanceFinalizedInfo(fSlot, fRoot, fState)
 
 	return nil
 }
@@ -144,16 +182,16 @@ func (s *State) MigrateToCold(ctx context.Context, fRoot [32]byte) error {
 // canonicalRootAtOrBelow returns the root of the highest canonical block at or below the given slot,
 // skipping slots that hold only blocks which lost fork choice. Those are never deleted from the slot index.
 // Canonicality comes from the finalized index, which is decisive below the finalized checkpoint slot.
-// floor is a slot already known to be canonical; resolving past it is an error rather than a walk to genesis.
+// floor is the migration cursor, a slot whose archive is known to exist. A canonical block below the
+// floor is a valid answer only when its state is on disk (the archive of a skipped boundary slot is the
+// state of the highest canonical block below that slot); otherwise resolving past the floor means the
+// finalized index is missing entries, and that is an error rather than a walk to genesis.
 func (s *State) canonicalRootAtOrBelow(ctx context.Context, slot, floor primitives.Slot) ([32]byte, error) {
 	// HighestRootsBelowSlot reports a strictly lower slot, so next decreases every round.
 	for next := slot + 1; ; {
 		high, roots, err := s.beaconDB.HighestRootsBelowSlot(ctx, next)
 		if err != nil {
 			return [32]byte{}, err
-		}
-		if high < floor {
-			return [32]byte{}, errUnknownBlock
 		}
 		canonical := make([][32]byte, 0, 1)
 		for _, r := range roots {
@@ -163,6 +201,9 @@ func (s *State) canonicalRootAtOrBelow(ctx context.Context, slot, floor primitiv
 		}
 		switch len(canonical) {
 		case 1:
+			if high < floor && !s.beaconDB.HasState(ctx, canonical[0]) {
+				return [32]byte{}, errUnknownBlock
+			}
 			return canonical[0], nil
 		case 0:
 			if high == 0 {

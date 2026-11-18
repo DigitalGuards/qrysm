@@ -166,6 +166,11 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 				continue
 			default:
 			}
+			// A block requested by root never went through the gossip pipeline,
+			// which is where the slasher receives block headers. Feed it now that
+			// it is authenticated: a proposer can otherwise deliver an
+			// equivocation this way without the slasher ever seeing it.
+			s.feedBlockHeaderToSlasher(b)
 
 			// Calculate the deadline time by adding three slots duration to the current time.
 			secondsPerSlot := params.BeaconConfig().SecondsPerSlot

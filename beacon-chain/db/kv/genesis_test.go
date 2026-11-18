@@ -9,9 +9,11 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/theQRL/qrysm/beacon-chain/db/iface"
+	dbIface "github.com/theQRL/qrysm/beacon-chain/db/iface"
 	"github.com/theQRL/qrysm/beacon-chain/state"
 	fieldparams "github.com/theQRL/qrysm/config/fieldparams"
 	"github.com/theQRL/qrysm/config/params"
+	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/primitives"
 	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	"github.com/theQRL/qrysm/testing/assert"
@@ -304,4 +306,107 @@ func TestEnsureEmbeddedGenesis(t *testing.T) {
 	assert.NotNil(t, gb)
 
 	testGenesisDataSaved(t, db)
+}
+
+func TestEnsureEmbeddedGenesis_RejectsDifferentStoredGenesis(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.MainnetConfig().Copy()
+	cfg.SecondsPerSlot = 1
+	undo, err := params.SetActiveWithUndo(cfg)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, undo())
+	}()
+
+	ctx := context.Background()
+	db := setupDB(t)
+	embedded, err := db.GenesisState(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, embedded, "an embedded genesis state does not exist")
+
+	other, err := util.NewBeaconStateZond()
+	require.NoError(t, err)
+	require.NoError(t, db.SaveGenesisData(ctx, other))
+
+	require.ErrorIs(t, db.EnsureEmbeddedGenesis(ctx), dbIface.ErrEmbeddedGenesisMismatch)
+}
+
+// The genesis block carries the zero execution block hash, which no execution
+// client can resolve, so it is stored with its full payload even in a database
+// that stores blinded blocks.
+
+func TestSaveGenesisData_StoresGenesisBlockUnblinded(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+	blinded, err := db.shouldSaveBlinded(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, blinded, "a fresh database stores blinded blocks")
+
+	gs, err := util.NewBeaconStateZond()
+	require.NoError(t, err)
+	require.NoError(t, db.SaveGenesisData(ctx, gs))
+	gb, err := db.GenesisBlock(ctx)
+	require.NoError(t, err)
+	require.Equal(t, false, gb.IsBlinded())
+
+	// Later blocks keep the blinded storage format.
+	b := util.NewBeaconBlockZond()
+	b.Block.Slot = 1
+	wsb, err := blocks.NewSignedBeaconBlock(b)
+	require.NoError(t, err)
+	require.NoError(t, db.SaveBlock(ctx, wsb))
+	root, err := wsb.Block().HashTreeRoot()
+	require.NoError(t, err)
+	stored, err := db.Block(ctx, root)
+	require.NoError(t, err)
+	require.Equal(t, true, stored.IsBlinded())
+}
+
+// A checkpoint can only be the origin of a chain without finalized history.
+
+// A genesis block that an older release stored blinded is rewritten with its
+// empty execution payload when the database is opened, so it can be served.
+func TestNewKVStore_RepairsBlindedGenesisBlock(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := NewKVStore(ctx, dir)
+	require.NoError(t, err)
+	gs, err := util.NewBeaconStateZond()
+	require.NoError(t, err)
+	require.NoError(t, db.SaveGenesisData(ctx, gs))
+	gb, err := db.GenesisBlock(ctx)
+	require.NoError(t, err)
+	root, err := gb.Block().HashTreeRoot()
+	require.NoError(t, err)
+
+	// Store it the way an older release did.
+	blindedEnc, err := marshalBlockBlinded(ctx, gb)
+	require.NoError(t, err)
+	require.NoError(t, db.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(blocksBucket).Put(root[:], blindedEnc)
+	}))
+	db.blockCache.Del(string(root[:]))
+	stored, err := db.GenesisBlock(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, stored.IsBlinded())
+	require.NoError(t, db.Close())
+
+	reopened, err := NewKVStore(ctx, dir)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, reopened.Close()) }()
+	repaired, err := reopened.GenesisBlock(ctx)
+	require.NoError(t, err)
+	require.Equal(t, false, repaired.IsBlinded(), "the genesis block must be stored with its payload again")
+	repairedRoot, err := repaired.Block().HashTreeRoot()
+	require.NoError(t, err)
+	require.Equal(t, root, repairedRoot)
+	byRoot, err := reopened.Block(ctx, root)
+	require.NoError(t, err)
+	require.Equal(t, false, byRoot.IsBlinded())
+
+	// A database whose genesis block is already full is left alone.
+	require.NoError(t, reopened.repairBlindedGenesisBlock(ctx))
+	again, err := reopened.GenesisBlock(ctx)
+	require.NoError(t, err)
+	require.Equal(t, false, again.IsBlinded())
 }

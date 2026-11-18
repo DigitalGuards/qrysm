@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/theQRL/qrysm/config/params"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	bolt "go.etcd.io/bbolt"
 )
@@ -19,10 +17,12 @@ var migrationFinalizedParent = []byte("parent_bug_32fb183")
 // the concatenated children-list for a parent into ParentRoot instead of the
 // canonical single 32-byte parent root.
 //
-// Walks backward through finalizedBlockRootsIndexBucket; for each entry whose
+// Walks the whole finalizedBlockRootsIndexBucket; for each entry whose
 // ParentRoot equals its own key (a hallmark of the corruption), looks up the
-// real block and replaces ParentRoot with block.ParentRoot. Stops scanning
-// after ~10 epochs of consecutive non-corrupt entries.
+// real block and replaces ParentRoot with block.ParentRoot. The bucket is keyed
+// by block root, so its iteration order is unrelated to slot order and the scan
+// cannot stop early after a run of clean entries: the migration runs once (it
+// records completion) and the scan is a read of the index.
 func migrateFinalizedParent(ctx context.Context, db *bolt.DB) error {
 	if updateErr := db.Update(func(tx *bolt.Tx) error {
 		mb := tx.Bucket(migrationsBucket)
@@ -40,8 +40,6 @@ func migrateFinalizedParent(ctx context.Context, db *bolt.DB) error {
 		}
 
 		c := bkt.Cursor()
-		var slotsWithoutBug primitives.Slot
-		maxBugSearch := params.BeaconConfig().SlotsPerEpoch * 10
 		for k, v := c.Last(); k != nil; k, v = c.Prev() {
 			// check if context is cancelled in between
 			if ctx.Err() != nil {
@@ -59,10 +57,6 @@ func migrateFinalizedParent(ctx context.Context, db *bolt.DB) error {
 				continue
 			}
 			if bytes.Equal(v, containerFinalizedButNotCanonical) {
-				slotsWithoutBug += 1
-				if slotsWithoutBug > maxBugSearch {
-					break
-				}
 				continue
 			}
 
@@ -76,13 +70,8 @@ func migrateFinalizedParent(ctx context.Context, db *bolt.DB) error {
 			}
 			// Not one of the corrupt values
 			if !bytes.Equal(idxEntry.ParentRoot, k) {
-				slotsWithoutBug += 1
-				if slotsWithoutBug > maxBugSearch {
-					break
-				}
 				continue
 			}
-			slotsWithoutBug = 0
 			log.WithField("root", fmt.Sprintf("%#x", k)).Debug("found index entry with incorrect parent root")
 
 			// Look up full block to get the correct parent root.

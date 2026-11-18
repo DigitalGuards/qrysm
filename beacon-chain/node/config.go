@@ -97,8 +97,16 @@ func configureBuilderCircuitBreaker(cliCtx *cli.Context) error {
 
 func configureSlotsPerArchivedPoint(cliCtx *cli.Context) error {
 	if cliCtx.IsSet(flags.SlotsPerArchivedPoint.Name) {
+		// The interval divides slots in the state migration and the dirty-state
+		// cleanup: zero would be a division by zero there, and a negative value
+		// would wrap to an interval no chain reaches, so no state is ever
+		// archived and every replay starts from genesis.
+		value := cliCtx.Int(flags.SlotsPerArchivedPoint.Name)
+		if value <= 0 {
+			return fmt.Errorf("%s must be a positive number of slots, got %d", flags.SlotsPerArchivedPoint.Name, value)
+		}
 		c := params.BeaconConfig().Copy()
-		c.SlotsPerArchivedPoint = primitives.Slot(cliCtx.Int(flags.SlotsPerArchivedPoint.Name))
+		c.SlotsPerArchivedPoint = primitives.Slot(value)
 		if err := params.SetActive(c); err != nil {
 			return err
 		}
@@ -143,11 +151,6 @@ func configureNetwork(cliCtx *cli.Context) {
 		c := params.BeaconNetworkConfig()
 		c.BootstrapNodes = cliCtx.StringSlice(cmd.BootstrapNode.Name)
 		params.OverrideBeaconNetworkConfig(c)
-	}
-	if cliCtx.IsSet(flags.ContractDeploymentBlock.Name) {
-		networkCfg := params.BeaconNetworkConfig()
-		networkCfg.ContractDeploymentBlock = uint64(cliCtx.Int(flags.ContractDeploymentBlock.Name))
-		params.OverrideBeaconNetworkConfig(networkCfg)
 	}
 }
 

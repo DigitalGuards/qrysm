@@ -143,7 +143,7 @@ func cliActionNewSeed(cliCtx *cli.Context) error {
 	}
 
 	stakingdeposit.GenerateKeys(newSeedFlags.ValidatorStartIndex,
-		newSeedFlags.NumValidators, misc.EncodeHex(seed[:]), newSeedFlags.Folder,
+		newSeedFlags.NumValidators, misc.EncodeHex(seed), newSeedFlags.Folder,
 		newSeedFlags.ChainName, keystorePassword, executionAddr,
 		newSeedFlags.LightKDF)
 

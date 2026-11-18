@@ -534,7 +534,7 @@ func TestSetupExecutionClientConnections_RejectsInvalidChain(t *testing.T) {
 			require.NoError(t, err)
 			defer original.Close()
 			s := &Service{rpcClient: original, cfg: &config{beaconNodeStatsUpdater: &NopBeaconNodeStatsUpdater{}}}
-			defer s.Stop()
+			defer func() { require.NoError(t, s.Stop()) }()
 			if !valid {
 				chainID++
 			}
@@ -560,7 +560,7 @@ func TestSetupExecutionClientConnections_ConcurrentRequests(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 	s := &Service{rpcClient: client, cfg: &config{beaconNodeStatsUpdater: &NopBeaconNodeStatsUpdater{}}}
-	defer s.Stop()
+	defer func() { require.NoError(t, s.Stop()) }()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -716,6 +716,8 @@ func TestReconstructFullBlock(t *testing.T) {
 		jsonPayload["size"] = encodedNum
 		jsonPayload["baseFeePerGas"] = encodedNum
 		jsonPayload["withdrawals"] = []*gqrltypes.Withdrawal{}
+		jsonPayload["withdrawalsRoot"] = gqrltypes.EmptyWithdrawalsHash
+		jsonPayload["prevRandao"] = common.BytesToHash(payload.PrevRandao)
 
 		wrappedPayload, err := blocks.WrappedExecutionPayloadZond(payload, 0)
 		require.NoError(t, err)
@@ -811,6 +813,8 @@ func TestReconstructFullBlockBatch(t *testing.T) {
 		jsonPayload["size"] = encodedNum
 		jsonPayload["baseFeePerGas"] = encodedNum
 		jsonPayload["withdrawals"] = []*gqrltypes.Withdrawal{}
+		jsonPayload["withdrawalsRoot"] = gqrltypes.EmptyWithdrawalsHash
+		jsonPayload["prevRandao"] = common.BytesToHash(payload.PrevRandao)
 
 		wrappedPayload, err := blocks.WrappedExecutionPayloadZond(payload, 0)
 		require.NoError(t, err)

@@ -861,13 +861,6 @@ func (b *BeaconNode) registerRPCService(router *mux.Router) error {
 		return err
 	}
 
-	var slasherService *slasher.Service
-	if features.Get().EnableSlasher {
-		if err := b.services.FetchService(&slasherService); err != nil {
-			return err
-		}
-	}
-
 	genesisValidators := b.cliCtx.Uint64(flags.InteropNumValidatorsFlag.Name)
 	var depositFetcher cache.DepositFetcher
 	var chainStartFetcher execution.ChainStartFetcher
@@ -923,7 +916,6 @@ func (b *BeaconNode) registerRPCService(router *mux.Router) error {
 		AttestationsPool:              b.attestationPool,
 		ExitPool:                      b.exitPool,
 		SlashingsPool:                 b.slashingsPool,
-		SlashingChecker:               slasherService,
 		SyncCommitteeObjectPool:       b.syncCommitteePool,
 		ExecutionChainService:         web3Service,
 		ExecutionChainInfoFetcher:     web3Service,

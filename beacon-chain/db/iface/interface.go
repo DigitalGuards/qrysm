@@ -46,6 +46,7 @@ type ReadOnlyDatabase interface {
 	HasArchivedPoint(ctx context.Context, slot primitives.Slot) bool
 	LastArchivedRoot(ctx context.Context) [32]byte
 	LastArchivedSlot(ctx context.Context) (primitives.Slot, error)
+	StateMigrationCursor(ctx context.Context) (primitives.Slot, bool, error)
 	LastValidatedCheckpoint(ctx context.Context) (*qrysmpb.Checkpoint, error)
 	// Deposit contract related handlers.
 	DepositContractAddress(ctx context.Context) ([]byte, error)
@@ -103,6 +104,7 @@ type NoHeadAccessDatabase interface {
 	SaveRegistrationsByValidatorIDs(ctx context.Context, ids []primitives.ValidatorIndex, regs []*qrysmpb.ValidatorRegistrationV1) error
 
 	CleanUpDirtyStates(ctx context.Context, slotsPerArchivedPoint primitives.Slot) error
+	SaveStateMigrationCursor(ctx context.Context, slot primitives.Slot) error
 
 	// P2P Metadata operations.
 	SaveMetadataSeqNum(ctx context.Context, seqNum uint64) error
@@ -139,6 +141,12 @@ type SlasherDatabase interface {
 	) error
 	SaveSlasherChunks(
 		ctx context.Context, kind slashertypes.ChunkKind, chunkKeys [][]byte, chunks [][]uint16,
+	) error
+	SaveSlasherChunksAndEpochs(
+		ctx context.Context,
+		minChunkKeys [][]byte, minChunks [][]uint16,
+		maxChunkKeys [][]byte, maxChunks [][]uint16,
+		epochByValidator map[primitives.ValidatorIndex]primitives.Epoch,
 	) error
 	SaveBlockProposals(
 		ctx context.Context, proposal []*slashertypes.SignedBlockHeaderWrapper,

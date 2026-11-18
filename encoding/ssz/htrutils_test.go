@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	fastssz "github.com/prysmaticlabs/fastssz"
 	fieldparams "github.com/theQRL/qrysm/config/fieldparams"
 	"github.com/theQRL/qrysm/encoding/ssz"
 	enginev1 "github.com/theQRL/qrysm/proto/engine/v1"
@@ -244,4 +245,25 @@ func TestWithrawalSliceRoot(t *testing.T) {
 			require.DeepSSZEqual(t, tt.want, got)
 		})
 	}
+}
+
+func TestSlashingsRoot_RejectsOverLength(t *testing.T) {
+	full := make([]uint64, fieldparams.SlashingsLength)
+	for i := range full {
+		full[i] = uint64(i)
+	}
+	want, err := ssz.SlashingsRoot(full)
+	require.NoError(t, err)
+	_, err = ssz.SlashingsRoot(append(append([]uint64{}, full...), 0xdeadbeef))
+	assert.ErrorContains(t, "exceeds vector length", err)
+
+	hh := fastssz.NewHasher()
+	idx := hh.Index()
+	for _, v := range full {
+		fastssz.AppendUint(hh, v)
+	}
+	hh.Merkleize(idx)
+	got, err := hh.HashRoot()
+	require.NoError(t, err)
+	assert.Equal(t, got, want)
 }

@@ -2581,6 +2581,16 @@ func TestPrepareBeaconProposer(t *testing.T) {
 			code:    http.StatusBadRequest,
 			wantErr: "Invalid Fee Recipient",
 		},
+		{
+			name: "validator index not in the registry",
+			request: []*shared.FeeRecipient{{
+				FeeRecipient:   "Q0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b698D697092822185bF0311052215d5B5e1F3934",
+				ValidatorIndex: "1099511627776",
+			},
+			},
+			code:    http.StatusBadRequest,
+			wantErr: "is not in the registry",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2594,8 +2604,10 @@ func TestPrepareBeaconProposer(t *testing.T) {
 			writer := httptest.NewRecorder()
 			db := dbutil.SetupDB(t)
 			ctx := context.Background()
+			headState, _ := util.DeterministicGenesisStateZond(t, 4)
 			server := &Server{
-				BeaconDB: db,
+				BeaconDB:    db,
+				HeadFetcher: &mockChain.ChainService{State: headState},
 			}
 			server.PrepareBeaconProposer(writer, request)
 			require.Equal(t, tt.code, writer.Code)
@@ -2618,7 +2630,8 @@ func TestProposer_PrepareBeaconProposerOverlapping(t *testing.T) {
 	db := dbutil.SetupDB(t)
 
 	// New validator
-	proposerServer := &Server{BeaconDB: db}
+	headState, _ := util.DeterministicGenesisStateZond(t, 4)
+	proposerServer := &Server{BeaconDB: db, HeadFetcher: &mockChain.ChainService{State: headState}}
 	req := []*shared.FeeRecipient{{
 		FeeRecipient:   hexutil.EncodeQ(bytesutil.PadTo([]byte{0xFF, 0x01, 0xFF, 0x01, 0xFF, 0x01, 0xFF, 0x01, 0xFF, 0xFF, 0x01, 0xFF, 0x01, 0xFF, 0x01, 0xFF, 0x01, 0xFF}, fieldparams.FeeRecipientLength)),
 		ValidatorIndex: "1",

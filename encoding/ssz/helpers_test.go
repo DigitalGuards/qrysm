@@ -129,3 +129,50 @@ func TestMixInLength(t *testing.T) {
 	result := ssz.MixInLength(byteSlice, length)
 	assert.Equal(t, expected, result)
 }
+
+func TestBitlistRoot_RejectsMalformed(t *testing.T) {
+	cases := map[string]bitfield.Bitlist{
+		"typed nil":           nil,
+		"empty":               {},
+		"zero final byte":     {0xff, 0x00},
+		"oversized zero tail": {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00},
+	}
+	for name, bl := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ssz.BitlistRoot(bl, 32)
+			assert.ErrorContains(t, "bitlist has no length bit", err)
+		})
+	}
+	_, err := ssz.BitlistRoot(nil, 32)
+	assert.ErrorContains(t, "bitlist is nil", err)
+	_, err = ssz.BitlistRoot(bitfield.NewBitlist(0), 32)
+	require.NoError(t, err)
+
+	// Pointers satisfy the interface too and must get the same validation.
+	_, err = ssz.BitlistRoot((*bitfield.Bitlist)(nil), 32)
+	assert.ErrorContains(t, "bitlist is nil", err)
+	_, err = ssz.BitlistRoot(&bitfield.Bitlist{0xff, 0x00}, 32)
+	assert.ErrorContains(t, "bitlist has no length bit", err)
+	_, err = ssz.BitlistRoot(&bitfield.Bitlist{}, 32)
+	assert.ErrorContains(t, "bitlist has no length bit", err)
+	valid := bitfield.NewBitlist(5)
+	valid.SetBitAt(2, true)
+	wantRoot, err := ssz.BitlistRoot(valid, 32)
+	require.NoError(t, err)
+	gotRoot, err := ssz.BitlistRoot(&valid, 32)
+	require.NoError(t, err)
+	assert.Equal(t, wantRoot, gotRoot)
+}
+
+func TestBitwiseMerkleize_RejectsCountMismatch(t *testing.T) {
+	chunks := make([][32]byte, 5)
+	for i := range chunks {
+		chunks[i][0] = byte(i + 1)
+	}
+	_, err := ssz.BitwiseMerkleize(chunks, 3, 8)
+	assert.ErrorContains(t, "does not match", err)
+	_, err = ssz.BitwiseMerkleize(chunks, 4, 4)
+	assert.ErrorContains(t, "does not match", err)
+	_, err = ssz.BitwiseMerkleize(chunks, 5, 8)
+	require.NoError(t, err)
+}

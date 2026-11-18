@@ -185,3 +185,16 @@ func TestMerkleizeAndProof_LeafLengths(t *testing.T) {
 		}
 	}
 }
+
+func TestMerkleizeVector_DoesNotWriteIntoCallerArray(t *testing.T) {
+	leaves := make([][32]byte, 4)
+	for i := range leaves {
+		leaves[i][0] = byte(i + 1)
+	}
+	fourth := leaves[3]
+	got := ssz.MerkleizeVector(leaves[:3], 4)
+	assert.Equal(t, fourth, leaves[3], "padding must not overwrite the caller's spare capacity")
+	padded := make([][32]byte, 4)
+	copy(padded, leaves[:3])
+	assert.Equal(t, ssz.MerkleizeVector(padded, 4), got)
+}

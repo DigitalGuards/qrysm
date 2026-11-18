@@ -88,6 +88,7 @@ go_test(
         "//testing/assert",
         "//testing/require",
         "//testing/util",
+        "//time/slots",
         "@com_github_pkg_errors//:errors",
         "@com_github_sirupsen_logrus//hooks/test",
         "@org_golang_google_protobuf//proto",

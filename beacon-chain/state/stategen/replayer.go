@@ -30,6 +30,9 @@ type HistoryAccessor interface {
 	GenesisBlockRoot(ctx context.Context) ([32]byte, error)
 	Block(ctx context.Context, blockRoot [32]byte) (interfaces.ReadOnlySignedBeaconBlock, error)
 	StateOrError(ctx context.Context, blockRoot [32]byte) (state.BeaconState, error)
+	// Checkpoint sync bounds: the origin block and the backfill position.
+	OriginCheckpointBlockRoot(ctx context.Context) ([32]byte, error)
+	BackfillBlockRoot(ctx context.Context) ([32]byte, error)
 }
 
 // CanonicalChecker determines whether the given block root is canonical.

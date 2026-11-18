@@ -3,6 +3,7 @@ package slasherkv
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -10,8 +11,10 @@ import (
 
 	ssz "github.com/prysmaticlabs/fastssz"
 	slashertypes "github.com/theQRL/qrysm/beacon-chain/slasher/types"
+	fieldparams "github.com/theQRL/qrysm/config/fieldparams"
 	"github.com/theQRL/qrysm/config/params"
 	"github.com/theQRL/qrysm/consensus-types/primitives"
+	"github.com/theQRL/qrysm/container/slice"
 	"github.com/theQRL/qrysm/encoding/bytesutil"
 	qrysmpb "github.com/theQRL/qrysm/proto/qrysm/v1alpha1"
 	"github.com/theQRL/qrysm/testing/assert"
@@ -642,5 +645,129 @@ func Test_encodeValidatorIndex(t *testing.T) {
 			decoded := binary.LittleEndian.Uint64(encodedIndex)
 			require.DeepEqual(t, tt.index, primitives.ValidatorIndex(decoded))
 		})
+	}
+}
+
+// alignedAttestationWrapper builds an attestation whose signatures are aligned
+// with its attesting indices (one distinct signature per index), as the
+// attestation conversion produces them.
+func alignedAttestationWrapper(source, target primitives.Epoch, indices []uint64, dataRoot []byte) *slashertypes.IndexedAttestationWrapper {
+	w := createAttestationWrapper(source, target, indices, dataRoot)
+	sigs := make([][]byte, len(indices))
+	for i, idx := range indices {
+		sig := make([]byte, fieldparams.MLDSA87SignatureLength)
+		sig[0] = byte(idx + 1)
+		sigs[i] = sig
+	}
+	w.IndexedAttestation.Signatures = sigs
+	return w
+}
+
+func TestSaveAttestationRecords_MergesIndicesForSameDataRoot(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	rootD := bytesutil.PadTo([]byte("data-D"), 32)
+	rootE := bytesutil.PadTo([]byte("data-E"), 32)
+
+	// Validator 1 votes D, then validator 2's attestation for the same data
+	// arrives (a late single or a block aggregate without validator 1).
+	first := alignedAttestationWrapper(2, 3, []uint64{1}, rootD)
+	second := alignedAttestationWrapper(2, 3, []uint64{2}, rootD)
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{first}))
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{second}))
+
+	// The stored record now holds both validators, with their own signatures.
+	record, err := db.AttestationRecordForValidator(ctx, 2, 3)
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	require.DeepEqual(t, []uint64{1, 2}, record.IndexedAttestation.AttestingIndices)
+	require.Equal(t, 2, len(record.IndexedAttestation.Signatures))
+	require.DeepEqual(t, first.IndexedAttestation.Signatures[0], record.IndexedAttestation.Signatures[0])
+	require.DeepEqual(t, second.IndexedAttestation.Signatures[0], record.IndexedAttestation.Signatures[1])
+
+	// Validator 1 double votes: the previous record must still contain it, so
+	// the slashing built from it has a slashable index.
+	double := alignedAttestationWrapper(2, 3, []uint64{1}, rootE)
+	votes, err := db.CheckAttesterDoubleVotes(ctx, []*slashertypes.IndexedAttestationWrapper{double})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(votes))
+	common := slice.IntersectionUint64(
+		votes[0].PrevAttestationWrapper.IndexedAttestation.AttestingIndices,
+		votes[0].AttestationWrapper.IndexedAttestation.AttestingIndices,
+	)
+	require.DeepEqual(t, []uint64{1}, common)
+}
+
+func TestSaveAttestationRecords_SameIndicesLeaveRecordUntouched(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	rootD := bytesutil.PadTo([]byte("data-D"), 32)
+	att := alignedAttestationWrapper(2, 3, []uint64{4, 7}, rootD)
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{att}))
+	before, err := db.AttestationRecordForValidator(ctx, 4, 3)
+	require.NoError(t, err)
+
+	// A record with the same indices (a replayed aggregate) is not rewritten,
+	// and a subset of the indices does not shrink it.
+	subset := alignedAttestationWrapper(2, 3, []uint64{7}, rootD)
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{att, subset}))
+	after, err := db.AttestationRecordForValidator(ctx, 4, 3)
+	require.NoError(t, err)
+	require.DeepEqual(t, before, after)
+}
+
+func TestSaveAttestationRecords_UnionAboveCommitteeSizeKeepsIncoming(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	max := params.BeaconConfig().MaxValidatorsPerCommittee
+	indices := make([]uint64, 0, max)
+	for i := uint64(0); i < max; i++ {
+		indices = append(indices, i)
+	}
+	rootD := bytesutil.PadTo([]byte("data-D"), 32)
+	full := alignedAttestationWrapper(2, 3, indices, rootD)
+	extra := alignedAttestationWrapper(2, 3, []uint64{max + 10}, rootD)
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{full}))
+	require.NoError(t, db.SaveAttestationRecordsForValidators(ctx, []*slashertypes.IndexedAttestationWrapper{extra}))
+
+	record, err := db.AttestationRecordForValidator(ctx, primitives.ValidatorIndex(max+10), 3)
+	require.NoError(t, err)
+	require.DeepEqual(t, []uint64{max + 10}, record.IndexedAttestation.AttestingIndices)
+}
+
+// Chunks and epoch markers are saved together: a save within the batch size
+// is one transaction, and a larger one still lands its markers with its last
+// batch of chunks.
+func TestSaveSlasherChunksAndEpochs(t *testing.T) {
+	ctx := context.Background()
+	beaconDB := setupDB(t)
+	for _, count := range []int{3, ChunkSaveBatchSize + 5} {
+		minKeys, maxKeys := make([][]byte, 0, count), make([][]byte, 0, count)
+		minChunks, maxChunks := make([][]uint16, 0, count), make([][]uint16, 0, count)
+		for i := 0; i < count; i++ {
+			minKeys = append(minKeys, []byte(fmt.Sprintf("min-%d-%d", count, i)))
+			maxKeys = append(maxKeys, []byte(fmt.Sprintf("max-%d-%d", count, i)))
+			minChunks = append(minChunks, []uint16{uint16(i), 1})
+			maxChunks = append(maxChunks, []uint16{uint16(i), 2})
+		}
+		epochs := map[primitives.ValidatorIndex]primitives.Epoch{1: primitives.Epoch(count), 2: primitives.Epoch(count + 1)}
+		require.NoError(t, beaconDB.SaveSlasherChunksAndEpochs(ctx, minKeys, minChunks, maxKeys, maxChunks, epochs))
+
+		loadedMin, existsMin, err := beaconDB.LoadSlasherChunks(ctx, slashertypes.MinSpan, minKeys)
+		require.NoError(t, err)
+		loadedMax, existsMax, err := beaconDB.LoadSlasherChunks(ctx, slashertypes.MaxSpan, maxKeys)
+		require.NoError(t, err)
+		for i := 0; i < count; i++ {
+			require.Equal(t, true, existsMin[i] && existsMax[i])
+			require.DeepEqual(t, minChunks[i], loadedMin[i])
+			require.DeepEqual(t, maxChunks[i], loadedMax[i])
+		}
+		written, err := beaconDB.LastEpochWrittenForValidators(ctx, []primitives.ValidatorIndex{1, 2})
+		require.NoError(t, err)
+		require.Equal(t, primitives.Epoch(count), written[0].Epoch)
+		require.Equal(t, primitives.Epoch(count+1), written[1].Epoch)
 	}
 }
