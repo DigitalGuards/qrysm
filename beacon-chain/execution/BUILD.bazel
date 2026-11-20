@@ -3,6 +3,7 @@ load("@qrysm//tools/go:def.bzl", "go_library", "go_test")
 go_library(
     name = "execution",
     srcs = [
+        "beacon_root.go",
         "block_cache.go",
         "block_reader.go",
         "deposit.go",
@@ -74,6 +75,7 @@ go_test(
     name = "execution_test",
     size = "medium",
     srcs = [
+        "beacon_root_test.go",
         "block_cache_test.go",
         "block_reader_test.go",
         "deposit_test.go",

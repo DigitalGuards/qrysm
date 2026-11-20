@@ -129,6 +129,7 @@ go_test(
         "checktags_test.go",
         "execution_checkpoints_test.go",
         "execution_engine_recovery_test.go",
+        "beacon_root_test.go",
         "execution_engine_test.go",
         "execution_validation_test.go",
         "finalization_retry_test.go",

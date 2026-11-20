@@ -8,7 +8,6 @@ import (
 	"github.com/theQRL/qrysm/consensus-types/blocks"
 	"github.com/theQRL/qrysm/consensus-types/interfaces"
 	payloadattribute "github.com/theQRL/qrysm/consensus-types/payload-attribute"
-	"github.com/theQRL/qrysm/consensus-types/primitives"
 	"github.com/theQRL/qrysm/encoding/bytesutil"
 	"github.com/theQRL/qrysm/math"
 	pb "github.com/theQRL/qrysm/proto/engine/v1"
@@ -53,7 +52,7 @@ func (e *EngineClient) ForkchoiceUpdated(
 }
 
 // GetPayload --
-func (e *EngineClient) GetPayload(_ context.Context, _ [8]byte, s primitives.Slot) (interfaces.ExecutionData, bool, error) {
+func (e *EngineClient) GetPayload(_ context.Context, _ [8]byte, _ uint64) (interfaces.ExecutionData, bool, error) {
 	ed, err := blocks.WrappedExecutionPayloadZond(e.ExecutionPayloadZond, math.Shor(e.BlockValue))
 	if err != nil {
 		return nil, false, err

@@ -194,6 +194,7 @@ go_test(
         "proposer_builder_test.go",
         "proposer_deposits_test.go",
         "proposer_empty_block_test.go",
+        "beacon_root_test.go",
         "proposer_execution_payload_test.go",
         "proposer_exits_test.go",
         "proposer_reorg_test.go",

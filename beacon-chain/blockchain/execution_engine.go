@@ -262,7 +262,8 @@ func (s *Service) notifyNewPayload(ctx context.Context,
 		return false, errors.Wrap(invalidBlock{error: err}, "could not get execution payload")
 	}
 
-	lastValidHash, err := s.cfg.ExecutionEngineCaller.NewPayload(ctx, payload, []common.Hash{}, &common.Hash{} /*empty version hashes and root before Deneb*/)
+	parentBeaconRoot := common.Hash(blk.Block().ParentRoot())
+	lastValidHash, err := s.cfg.ExecutionEngineCaller.NewPayload(ctx, payload, []common.Hash{}, &parentBeaconRoot)
 	switch err {
 	case nil:
 		newPayloadValidNodeCount.Inc()
@@ -455,6 +456,13 @@ func (s *Service) getPayloadAttribute(ctx context.Context, st state.BeaconState,
 		return false, emptyAttri, 0
 	}
 
+	if params.BeaconConfig().ExperimentalBeaconRootsEnabled(uint64(t.Unix())) {
+		attr, err = payloadattribute.WithParentBeaconBlockRoot(attr, headRoot)
+		if err != nil {
+			log.WithError(err).Error("Could not bind payload attributes to beacon parent")
+			return false, emptyAttri, 0
+		}
+	}
 	return true, attr, proposerID
 }
 
